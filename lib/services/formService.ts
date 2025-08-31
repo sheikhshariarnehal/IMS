@@ -708,6 +708,7 @@ export class FormService {
       // Hash the password before storing
       console.log('🔄 Hashing password...');
       const hashedPassword = await this.hashPassword(data.password);
+      console.log('✅ Password hashed successfully');
 
       // Prepare clean data for database insertion
       const userData = {
@@ -758,8 +759,14 @@ export class FormService {
 
       return { success: true, data: createdUser };
     } catch (error) {
-      console.error('Error creating user:', error);
-      return { success: false, error: 'Failed to create user' };
+      console.error('❌ Error creating user:', error);
+
+      // Provide more specific error messages
+      if (error instanceof ReferenceError && error.message.includes('crypto')) {
+        return { success: false, error: 'Crypto API not available. Please update your app.' };
+      }
+
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to create user' };
     }
   }
 
@@ -801,15 +808,46 @@ export class FormService {
     }
   }
 
-  // Simple password hashing function (in production, use bcrypt or similar)
+  // Password hashing function (React Native compatible)
   private static async hashPassword(password: string): Promise<string> {
-    // For demo purposes, we'll use a simple hash
+    // For demo purposes, we'll use a hash that works on both web and mobile
     // In production, use proper bcrypt or similar
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + 'salt_key_2024');
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    try {
+      // Try to use expo-crypto for React Native
+      const { digestStringAsync, CryptoDigestAlgorithm } = await import('expo-crypto');
+      const saltedPassword = password + 'salt_key_2024';
+      const hash = await digestStringAsync(CryptoDigestAlgorithm.SHA256, saltedPassword);
+      return hash;
+    } catch (error) {
+      console.log('Expo crypto not available, trying web crypto...');
+
+      // Check if we're in a web environment
+      if (typeof crypto !== 'undefined' && crypto.subtle) {
+        try {
+          const encoder = new TextEncoder();
+          const data = encoder.encode(password + 'salt_key_2024');
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch (webError) {
+          console.warn('Web Crypto API failed, falling back to simple hash');
+        }
+      }
+
+      // Fallback for environments without crypto support
+      let hash = 0;
+      const saltedPassword = password + 'salt_key_2024';
+
+      for (let i = 0; i < saltedPassword.length; i++) {
+        const char = saltedPassword.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+
+      // Convert to positive hex string
+      return Math.abs(hash).toString(16).padStart(8, '0') + '_fallback_hash';
+    }
   }
 
   // Transfer Operations
