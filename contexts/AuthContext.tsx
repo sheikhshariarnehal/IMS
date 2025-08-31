@@ -1,0 +1,416 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SafeStorage from '../utils/safeStorage';
+import { supabase, setUserContext, clearUserContext, testAuth, User } from '../lib/supabase';
+
+// Check if we're in demo mode or web environment
+const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+const isWeb = typeof window !== 'undefined';
+
+// Use safe storage for web environment to handle localStorage issues
+const storage = isWeb ? SafeStorage : AsyncStorage;
+
+// User permissions interface
+interface UserPermissions {
+  dashboard: boolean;
+  products: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  inventory: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+    transfer: boolean;
+  };
+  sales: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+    invoice: boolean;
+  };
+  customers: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  suppliers: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  samples: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  reports: {
+    view: boolean;
+    export: boolean;
+  };
+  notifications: {
+    view: boolean;
+    manage: boolean;
+  };
+  activityLogs: {
+    view: boolean;
+  };
+  settings: {
+    view: boolean;
+    userManagement: boolean;
+    systemSettings: boolean;
+  };
+  help: {
+    view: boolean;
+  };
+}
+
+// User session interface
+interface UserSession {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  permissions: Record<string, any>;
+  assignedLocations?: number[];
+  assigned_location_id?: number;
+  loginTime: string;
+}
+
+// Login credentials interface
+interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+// Auth context interface
+interface AuthContextType {
+  user: UserSession | null;
+  isLoading: boolean;
+  login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  hasPermission: (module: string, action?: string, locationId?: string) => boolean;
+  isRole: (role: string) => boolean;
+  canAccessLocation: (locationId: string | number) => boolean;
+  getAccessibleLocations: () => string[];
+}
+
+// Create context
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Auth provider component
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load user session on app start
+  useEffect(() => {
+    loadUserSession();
+  }, []);
+
+  const loadUserSession = async () => {
+    try {
+      const sessionData = await storage.getItem('userSession');
+      if (sessionData) {
+        const userSession: UserSession = JSON.parse(sessionData);
+        setUser(userSession);
+      }
+    } catch (error) {
+      console.error('Failed to load user session:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Optimize auth methods with useCallback
+  const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { email, password } = credentials;
+
+      console.log('Login attempt for:', email);
+
+      // Test database connection first
+      const testResult = await testAuth(email.toLowerCase());
+      console.log('Database test result:', testResult);
+
+      if (testResult.error || !testResult.data) {
+        console.error('Database connection failed:', testResult.error);
+        return { success: false, error: 'Database connection failed. Please check your internet connection.' };
+      }
+
+      const user = testResult.data;
+
+      // Simple password check for demo (use proper hashing in production)
+      let isPasswordValid = false;
+
+      // Check password based on user email
+      if (user.email === 'admin@serranotex.com' && password === 'admin123') {
+        isPasswordValid = true;
+      } else if (user.email !== 'admin@serranotex.com' && password === 'password') {
+        isPasswordValid = true;
+      }
+
+      if (!isPasswordValid) {
+        console.log('Password validation failed for:', user.email);
+        return { success: false, error: 'Invalid email or password' };
+      }
+
+      console.log('Password validation successful for:', user.email);
+
+      // Set user context for RLS
+      await setUserContext(user.id);
+
+      // Update last login (skip in demo mode)
+      if (process.env.DEMO_MODE !== 'true' && process.env.EXPO_PUBLIC_DEMO_MODE !== 'true') {
+        await supabase
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', user.id);
+      }
+
+      // Create user session
+      const userSession: UserSession = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        permissions: user.permissions || {},
+        assignedLocations: user.assigned_location_id ? [user.assigned_location_id] : [],
+        assigned_location_id: user.assigned_location_id,
+        loginTime: new Date().toISOString()
+      };
+
+      // Save session
+      await storage.setItem('userSession', JSON.stringify(userSession));
+      setUser(userSession);
+
+      // Log login activity (skip in demo mode)
+      if (!isDemoMode) {
+        await supabase
+          .from('activity_logs')
+          .insert({
+            user_id: user.id,
+            action: 'LOGIN',
+            module: 'AUTH',
+            description: 'User logged in successfully',
+            created_at: new Date().toISOString()
+          });
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Login error:', error);
+      return { success: false, error: 'Login failed. Please try again.' };
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      // Log logout activity if user exists (skip in demo mode)
+      if (user && !isDemoMode) {
+        await supabase
+          .from('activity_logs')
+          .insert({
+            user_id: user.id,
+            action: 'LOGOUT',
+            module: 'AUTH',
+            description: 'User logged out',
+            created_at: new Date().toISOString()
+          });
+      }
+
+      // Clear user context
+      await clearUserContext();
+
+      // Clear local session
+      await storage.removeItem('userSession');
+      setUser(null);
+    } catch (error) {
+      console.error('Failed to clear user session:', error);
+    }
+  }, [user]);
+
+  const hasPermission = useCallback((module: string, action: string = 'view', locationId?: string): boolean => {
+    if (!user || !user.permissions) return false;
+
+    // Super admin has all permissions
+    if (user.role === 'super_admin') return true;
+
+    const modulePermissions = user.permissions[module.toLowerCase()];
+    
+    if (!modulePermissions) return false;
+    
+    // Map action names to permission fields
+    const actionMap: Record<string, string> = {
+      'view': 'view',
+      'read': 'view',
+      'add': 'add',
+      'create': 'add',
+      'edit': 'edit',
+      'update': 'edit',
+      'delete': 'delete',
+      'remove': 'delete',
+      'approve': 'approve'
+    };
+    
+    const permissionField = actionMap[action.toLowerCase()] || action.toLowerCase();
+    
+    let hasModulePermission = false;
+    
+    if (typeof modulePermissions === 'boolean') {
+      hasModulePermission = modulePermissions;
+    } else if (typeof modulePermissions === 'object' && modulePermissions !== null) {
+      hasModulePermission = modulePermissions[permissionField] ?? false;
+    }
+    
+    if (!hasModulePermission) return false;
+    
+    // Check location restrictions
+    if (locationId && user.role !== 'super_admin') {
+      // Convert locationId to number for comparison
+      const locationIdNum = typeof locationId === 'string' ? parseInt(locationId) : locationId;
+
+      // For location-specific permissions, check if user has access to this location
+      if (user.assignedLocations && user.assignedLocations.length > 0) {
+        return user.assignedLocations.includes(locationIdNum);
+      }
+
+      // If user has location restrictions in permissions
+      if (modulePermissions.locationRestrictions && modulePermissions.locationRestrictions.length > 0) {
+        return modulePermissions.locationRestrictions.includes(locationIdNum);
+      }
+    }
+    
+    return true;
+  }, [user]);
+
+  const isRole = useCallback((role: string): boolean => {
+    return user?.role === role;
+  }, [user]);
+
+  const canAccessLocation = useCallback((locationId: string | number): boolean => {
+    if (!user) return false;
+
+    // Super admin can access all locations
+    if (user.role === 'super_admin') return true;
+
+    // Convert locationId to number for comparison
+    const locationIdNum = typeof locationId === 'string' ? parseInt(locationId) : locationId;
+
+    // Check assigned locations
+    if (user.assignedLocations && user.assignedLocations.length > 0) {
+      return user.assignedLocations.includes(locationIdNum);
+    }
+
+    // Check single assigned location
+    if (user.assigned_location_id) {
+      return user.assigned_location_id === locationIdNum;
+    }
+
+    // If no location restrictions, allow access (for backward compatibility)
+    return true;
+  }, [user]);
+
+  const getAccessibleLocations = useCallback((): string[] => {
+    if (!user) return [];
+
+    // Super admin can access all locations
+    if (user.role === 'super_admin') return [];
+
+    // Return assigned locations as strings
+    if (user.assignedLocations && user.assignedLocations.length > 0) {
+      return user.assignedLocations.map(id => id.toString());
+    }
+
+    // Return single assigned location
+    if (user.assigned_location_id) {
+      return [user.assigned_location_id.toString()];
+    }
+
+    return [];
+  }, [user]);
+
+  // Memoize the context value to prevent unnecessary re-renders
+  const value = useMemo(() => ({
+    user,
+    isLoading,
+    login,
+    logout,
+    hasPermission,
+    isRole,
+    canAccessLocation,
+    getAccessibleLocations,
+  }), [user, isLoading, login, logout, hasPermission, isRole, canAccessLocation, getAccessibleLocations]);
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// Custom hook to use auth context
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+// Role-based access control component
+interface ProtectedComponentProps {
+  children: ReactNode;
+  module: string;
+  action?: string;
+  fallback?: ReactNode;
+}
+
+export function ProtectedComponent({ 
+  children, 
+  module, 
+  action = 'view', 
+  fallback = null 
+}: ProtectedComponentProps) {
+  const { hasPermission } = useAuth();
+  
+  if (!hasPermission(module, action)) {
+    return <>{fallback}</>;
+  }
+  
+  return <>{children}</>;
+}
+
+// Role-based menu item component
+interface RoleBasedMenuItemProps {
+  children: ReactNode;
+  requiredRole?: string;
+  requiredPermission?: { module: string; action?: string };
+}
+
+export function RoleBasedMenuItem({ 
+  children, 
+  requiredRole, 
+  requiredPermission 
+}: RoleBasedMenuItemProps) {
+  const { isRole, hasPermission } = useAuth();
+  
+  // Check role requirement
+  if (requiredRole && !isRole(requiredRole)) {
+    return null;
+  }
+  
+  // Check permission requirement
+  if (requiredPermission && !hasPermission(requiredPermission.module, requiredPermission.action)) {
+    return null;
+  }
+  
+  return <>{children}</>;
+}

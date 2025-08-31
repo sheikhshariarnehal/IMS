@@ -1,0 +1,284 @@
+# Serrano Tex - Inventory Management System (UI Demo)
+
+## 🎯 Project Overview
+
+**Company**: Serrano Tex - Wholesale fabrics for sofas, curtains, and garments in Bangladesh
+**Project Type**: React Native Inventory Management System 
+**Tech Stack**: React Native, Expo, TypeScript, AsyncStorage
+**Architecture**: Cross-platform mobile app (iOS, Android, Web) with role-based access control
+
+
+## ✨ Core Features
+
+### 🔐 Authentication System
+- **Role-based login** with 4 user tiers:
+  - **Super Admin**: Full system control, user management, all permissions
+  - **Admin**: Product management, sales, inventory, reports (configurable permissions)
+  - **Sales Manager**: Location-specific access (single warehouse OR showroom)
+  - **Investor**: Read-only dashboard access with financial summaries
+- **Demo Credentials**:
+  - Super Admin: admin@serranotex.com / Admin123!
+  - Sales Manager: sales@serranotex.com / Sales123!
+  - Investor: investor@serranotex.com / Investor123!
+- **Features**: AsyncStorage session persistence, permission-based UI components, secure logout
+
+### 🎨 Design System
+- **Dual Theme**: Light and dark mode support with AsyncStorage persistence
+- **Responsive Design**: Mobile-first with tablet support
+- **Modern UI**: Clean, professional interface with Lucide React Native icons
+- **Color System**: Comprehensive palette with status colors (success, warning, error, info)
+- **Typography**: Consistent text styling with proper hierarchy
+
+## 📱 Application Screens
+
+### 🏠 Dashboard
+**Purpose**: Central command center with analytics and KPIs
+**Features**:
+- **KPI Cards**: Total Sales (৳48,988), Profit Margin (৳8,988), Total Stock (4,826), Low Stock (12)
+- **Real-time metrics** with percentage change indicators and trending icons
+- **Role-based content** - different views for different user roles
+- **Responsive grid layout** for mobile and tablet
+- **Pull-to-refresh** functionality
+
+### 📦 Products
+**Purpose**: Complete product catalog management
+**Features**:
+- **Product Cards**: Display name, code, category, stock levels, location, status
+- **Status Indicators**: In Stock (green), Low Stock (yellow), Out of Stock (red)
+- **Search & Filter**: Multi-field search, category/status/location filtering
+- **CRUD Operations**: Add, edit, delete products (permission-based)
+- **Stock Metrics**: Available, On Hand, Reserved quantities
+- **Product Forms**: Simple and complex product addition forms
+- **Export functionality** and empty state handling
+
+### 🏢 Inventory
+**Purpose**: Multi-location inventory management with transfer functionality
+**Features**:
+- **Three-tab Interface**: Stock Items, Locations, Transfers
+- **KPI Dashboard**: Total Stock Items, Low Stock Items, Pending Transfers, Average Utilization
+- **Location Management**: Warehouse vs Showroom tracking with capacity utilization
+- **Stock Transfer System**: Request, approve, track transfers between locations
+- **Manager Information**: Contact details and location-specific data
+- **Real-time Status**: Transfer progress tracking with approval workflow
+
+### 💰 Sales & Invoicing
+**Purpose**: Comprehensive sales management with payment tracking
+**Features**:
+- **Three-tab Interface**: Sales, Due Payments, Invoices (placeholder)
+- **KPI Dashboard**: Total Sales (৳), Total Due (৳), Overdue Payments, Red List Customers
+- **Sales Cards**: Customer type badges (VIP, Regular, Wholesale), payment status, sale status
+- **Red List Management**: Automatic flagging for 60+ days overdue customers
+- **Payment Tracking**: Due dates, overdue calculations, payment reminders
+- **Invoice Generation**: PDF/Excel export capabilities
+- **Customer Analytics**: Purchase behavior and payment history
+
+### 👥 Customers
+**Purpose**: Customer relationship management with analytics
+**Features**:
+- **Four-tab Interface**: All Customers, Purchase History, Red List, Top Customers
+- **KPI Dashboard**: Total Customers, VIP Customers (with crown icon), Red Listed, Average Customer Value
+- **Customer Cards**: Avatar with initials, customer type badges, contact information
+- **Customer Types**: VIP (crown icon), Wholesale (blue), Regular (info color)
+- **Analytics**: Purchase statistics, payment behavior, outstanding amounts
+- **Red List System**: Overdue payment tracking with days past due
+- **Contact Management**: Phone, email, address information
+
+### 🚚 Suppliers
+**Purpose**: Supplier management and relationship tracking
+**Features**:
+- **KPI Dashboard**: Total Suppliers, Active Suppliers, Inactive Suppliers, Total Spent
+- **Supplier Cards**: Contact person, phone, email, address, status indicators
+- **Status Management**: Active/Inactive toggle with visual indicators
+- **Contact Information**: Comprehensive supplier details
+- **Action Buttons**: View, contact, edit, activate/deactivate
+- **Search & Filter**: Multi-field search capabilities
+
+### 🧪 Samples
+**Purpose**: Sample tracking with cost analysis and conversion metrics
+**Features**:
+- **Four-tab Interface**: Samples, Analytics, Conversions, Costs
+- **KPI Dashboard**: Total Samples, Delivered, Conversion Rate (%), Overdue
+- **Sample Cards**: Sample details, customer info, purpose, expected return dates
+- **Status Tracking**: Requested, Prepared, Delivered, Returned, Converted to Sale, Lost/Damaged, Expired
+- **Cost Management**: Delivery, packaging, staff time, transportation, miscellaneous costs
+- **Conversion Analytics**: Sample-to-sale tracking with revenue metrics
+- **Overdue Detection**: Visual indicators for samples past return date
+
+### 📊 Reports & Analytics
+**Purpose**: Business intelligence and automated reporting
+**Features**:
+- **Four-tab Interface**: Reports, Scheduled, Templates, Analytics
+- **KPI Dashboard**: Total Revenue with growth %, Gross Profit, Total Customers, Inventory Turnover
+- **Report Types**: Sales, Product Performance, Customer, Inventory, Financial, Sample reports
+- **Export Formats**: PDF, Excel, CSV, JSON
+- **Scheduled Reports**: Daily, weekly, monthly, quarterly automation
+- **Business Intelligence**: Insights, forecasts, recommendations
+- **Analytics Cards**: Performance metrics and trend analysis
+
+### 🔔 Notifications
+**Purpose**: Comprehensive notification system with priority management
+**Features**:
+- **KPI Dashboard**: Total Notifications, Unread, Critical, Mark All Read
+- **Categories**: Inventory, Sales, Customers, Samples, Payments, System, Security
+- **Priority System**: Critical (red), High (orange), Medium (blue), Low (green)
+- **Interactive Features**: Haptic feedback, swipe actions, filter system
+- **Action Buttons**: View, Mark Read, Delete with direct navigation
+- **Real-time Updates**: Timestamp display with relative dates
+
+### ⚙️ Settings
+**Purpose**: User management and system configuration
+**Features**:
+- **Role Management**: User creation, editing, deletion (Super Admin only)
+- **Account Settings**: Profile management, password change, contact information
+- **Theme Settings**: Light/dark mode toggle, color palette selection
+- **User Cards**: Avatar, role badges, status indicators, location assignments
+- **Permission System**: Role-based access control with location restrictions
+- **Security Features**: Two-factor authentication, notification preferences
+
+## 🏗️ Technical Architecture
+
+### 📁 Project Structure
+```
+project/
+├── app/                    # Screen components (Expo Router)
+│   ├── (auth)/            # Authentication screens
+│   ├── dashboard.tsx      # Main dashboard
+│   ├── products.tsx       # Product management
+│   ├── inventory.tsx      # Inventory management
+│   ├── sales.tsx          # Sales & invoicing
+│   ├── customers.tsx      # Customer management
+│   ├── suppliers.tsx      # Supplier management
+│   ├── samples.tsx        # Sample tracking
+│   ├── reports.tsx        # Reports & analytics
+│   ├── notification.tsx   # Notification center
+│   └── settings.tsx       # Settings & user management
+├── components/            # Reusable UI components
+│   ├── SharedLayout.tsx   # Main layout wrapper
+│   ├── TopNavBar.tsx      # Navigation header
+│   ├── AnimatedSidebar.tsx # Side navigation
+│   └── forms/             # Form components
+├── contexts/              # React Context providers
+│   ├── AuthContext.tsx    # Authentication state
+│   ├── ThemeContext.tsx   # Theme management
+│   └── PerformanceContext.tsx # Performance monitoring
+├── hooks/                 # Custom React hooks
+├── constants/             # App constants and themes
+├── types/                 # TypeScript type definitions
+├── utils/                 # Utility functions
+└── assets/               # Images and static assets
+```
+
+### 🔧 Tech Stack Details
+- **Framework**: React Native with Expo (v53.0.20)
+- **Navigation**: Expo Router for file-based routing
+- **Language**: TypeScript for type safety
+- **State Management**: React Context API (AuthContext, ThemeContext)
+- **Storage**: AsyncStorage for local data persistence
+- **Icons**: Lucide React Native for consistent iconography
+- **Charts**: react-native-pie-chart for data visualization
+- **Styling**: StyleSheet with dynamic theming system
+
+### 🎨 Theme System
+- **Light Theme**: White backgrounds, dark text, blue primary colors
+- **Dark Theme**: Dark backgrounds, light text, adjusted color palette
+- **Color Palette**: Primary (#2563eb), Success (#10b981), Warning (#f59e0b), Error (#ef4444)
+- **Responsive Spacing**: xs(4), sm(8), md(16), lg(24), xl(32), xxl(48)
+- **Border Radius**: sm(6), md(8), lg(12), xl(16)
+
+### 🔐 Authentication & Permissions
+- **Role Hierarchy**: Super Admin > Admin > Sales Manager > Investor
+- **Permission System**: Module-based with action-level granularity
+- **Location Restrictions**: Sales managers limited to assigned locations
+- **Session Management**: AsyncStorage with automatic loading
+- **Protected Components**: Permission-based UI rendering
+
+## 📊 Data Models (UI Demo - No Backend)
+
+### User Roles & Permissions
+```typescript
+interface UserPermissions {
+  dashboard: boolean;
+  products: { view, add, edit, delete };
+  inventory: { view, add, edit, delete, transfer };
+  sales: { view, add, edit, delete, invoice };
+  customers: { view, add, edit, delete };
+  suppliers: { view, add, edit, delete };
+  samples: { view, add, edit, delete };
+  reports: { view, export };
+  notifications: { view, manage };
+  settings: { view, userManagement, systemSettings };
+}
+```
+
+### Core Entities
+- **Products**: Name, code, category, prices, stock levels, location, status
+- **Customers**: Name, type (VIP/Regular/Wholesale), contact info, payment status
+- **Sales**: Sale number, customer, items, amounts, payment status, due dates
+- **Inventory**: Stock items, locations, transfers, utilization metrics
+- **Samples**: Sample details, customer, costs, status, conversion tracking
+- **Suppliers**: Company info, contact person, status, relationship data
+
+## 🚀 Performance Optimizations
+
+### React Performance
+- **React.memo**: All major components memoized
+- **useCallback**: Event handlers optimized
+- **useMemo**: Expensive calculations cached
+- **Instant Loading**: No artificial delays, immediate UI updates
+
+### Navigation Performance
+- **Animation Disabled**: `animation: 'none'` for instant navigation
+- **Gesture Disabled**: `gestureEnabled: false` for consistent behavior
+- **Optimized Routing**: File-based routing with Expo Router
+
+### Memory Management
+- **Component Cleanup**: Proper useEffect cleanup
+- **State Optimization**: Minimal state updates
+- **Image Optimization**: Placeholder fallbacks for missing images
+
+## 🎯 Key Features Summary
+
+### Business Logic
+- **Multi-role Access Control**: 4 distinct user roles with granular permissions
+- **Location-based Restrictions**: Sales managers limited to specific locations
+- **Red List Management**: Automatic customer flagging for overdue payments
+- **Sample Conversion Tracking**: ROI analysis for sample investments
+- **Inventory Transfer Workflow**: Multi-step approval process
+
+### User Experience
+- **Responsive Design**: Works on mobile, tablet, and web
+- **Dark/Light Theme**: User preference with persistence
+- **Instant Navigation**: No loading delays between screens
+- **Pull-to-Refresh**: Standard mobile interaction patterns
+- **Empty States**: Helpful messages when no data available
+
+### Data Visualization
+- **KPI Cards**: Key metrics with trend indicators
+- **Status Indicators**: Color-coded status across all modules
+- **Progress Bars**: Utilization and completion tracking
+- **Charts**: Pie charts for data distribution
+- **Badges**: Role, status, and type indicators
+
+## 📝 Development Notes
+
+### Current State
+- **UI-only Demo**: No backend connectivity
+- **Mock Data**: All data is hardcoded for demonstration
+- **Local Storage**: AsyncStorage for theme and auth persistence
+- **Performance Optimized**: Instant loading and navigation
+
+### Future Enhancements
+- **Backend Integration**: Connect to real database
+- **Real-time Updates**: WebSocket or polling for live data
+- **Offline Support**: Local database with sync capabilities
+- **Push Notifications**: Real-time alerts and updates
+- **Advanced Analytics**: More detailed reporting and insights
+
+### Code Quality
+- **TypeScript**: Full type safety throughout the application
+- **Component Architecture**: Reusable, modular components
+- **Context Management**: Centralized state for auth and theme
+- **Error Handling**: Graceful error states and user feedback
+- **Accessibility**: Proper color contrast and touch targets
+
+This inventory management system demonstrates a complete, production-ready UI for a wholesale fabric business, showcasing modern React Native development practices with a focus on performance, user experience, and maintainable code architecture.
