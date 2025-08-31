@@ -254,14 +254,16 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom');
   const dropdownRef = useRef<View>(null);
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const selectedOption = options.find((option: CustomerType) => option.id === value);
 
   const handleDropdownToggle = () => {
     if (!isOpen && dropdownRef.current) {
-      dropdownRef.current.measure((x, y, width, height, pageX, pageY) => {
+      dropdownRef.current.measure((_x, _y, _width, height, _pageX, pageY) => {
         const screenHeight = Dimensions.get('window').height;
-        const dropdownHeight = Math.min(options.length * 60, 200);
+        const dropdownHeight = Math.min(options.length * 70, 280);
         const spaceBelow = screenHeight - pageY - height - 100;
         const spaceAbove = pageY - 100;
 
@@ -272,77 +274,149 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
         }
       });
     }
-    setIsOpen(!isOpen);
+
+    if (!isOpen) {
+      setIsOpen(true);
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setIsOpen(false));
+    }
   };
 
   return (
     <View style={[styles.dropdownContainer, isOpen && styles.dropdownContainerOpen]} ref={dropdownRef}>
       <TouchableOpacity
         style={[
-          styles.dropdownButton,
+          styles.modernDropdownButton,
           {
-            borderColor: error ? theme.colors.status.error : theme.colors.border,
-            backgroundColor: theme.colors.backgroundTertiary
+            borderColor: error ? theme.colors.status.error :
+                        isOpen ? theme.colors.primary : theme.colors.border,
+            backgroundColor: theme.colors.backgroundTertiary,
+            shadowColor: isOpen ? theme.colors.primary : 'transparent',
           }
         ]}
         onPress={handleDropdownToggle}
+        activeOpacity={0.7}
       >
         <View style={styles.dropdownContent}>
-          <Text style={[
-            styles.dropdownButtonText,
-            { color: selectedOption ? theme.colors.text.primary : theme.colors.text.muted }
-          ]}>
-            {selectedOption ? `${selectedOption.icon} ${selectedOption.name}` : placeholder}
-          </Text>
-          {selectedOption?.description && (
-            <Text style={[styles.dropdownSubtext, { color: theme.colors.text.muted }]}>
-              {selectedOption.description}
+          <View style={styles.dropdownMainContent}>
+            <Text style={[
+              styles.modernDropdownButtonText,
+              { color: selectedOption ? theme.colors.text.primary : theme.colors.text.muted }
+            ]}>
+              {selectedOption ? (
+                <Text>
+                  <Text style={styles.dropdownIcon}>{selectedOption.icon}</Text>
+                  <Text> {selectedOption.name}</Text>
+                </Text>
+              ) : placeholder}
             </Text>
-          )}
+            {selectedOption?.description && (
+              <Text style={[styles.modernDropdownSubtext, { color: theme.colors.text.muted }]}>
+                {selectedOption.description}
+              </Text>
+            )}
+          </View>
+          <Animated.View style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}>
+            <ChevronDown
+              size={22}
+              color={isOpen ? theme.colors.primary : theme.colors.text.muted}
+            />
+          </Animated.View>
         </View>
-        <ChevronDown
-          size={20}
-          color={theme.colors.text.muted}
-          style={[styles.dropdownIcon, isOpen && { transform: [{ rotate: '180deg' }] }]}
-        />
       </TouchableOpacity>
 
       {isOpen && (
-        <View style={[
-          styles.dropdownList,
+        <Animated.View style={[
+          styles.modernDropdownList,
           dropdownPosition === 'top' ? styles.dropdownListTop : styles.dropdownListBottom,
-          { backgroundColor: theme.colors.background }
+          {
+            backgroundColor: theme.colors.background,
+            borderColor: theme.colors.border,
+            transform: [{ scale: scaleAnim }],
+            opacity: fadeAnim,
+          }
         ]}>
+          <View style={[styles.dropdownHeader, { borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.dropdownHeaderText, { color: theme.colors.text.muted }]}>
+              Select Customer Type
+            </Text>
+          </View>
           <ScrollView
-            style={{ maxHeight: 200 }}
+            style={{ maxHeight: 240 }}
             nestedScrollEnabled
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {options.map((item: CustomerType) => (
+            {options.map((item: CustomerType, index) => (
               <TouchableOpacity
                 key={item.id}
                 style={[
-                  styles.dropdownItem,
-                  { borderBottomColor: theme.colors.border }
+                  styles.modernDropdownItem,
+                  {
+                    borderBottomColor: theme.colors.border,
+                    backgroundColor: value === item.id ? theme.colors.primary + '10' : 'transparent'
+                  },
+                  index === options.length - 1 && { borderBottomWidth: 0 }
                 ]}
                 onPress={() => {
                   onChange(item.id);
-                  setIsOpen(false);
+                  handleDropdownToggle();
                 }}
+                activeOpacity={0.7}
               >
-                <View>
-                  <Text style={[styles.dropdownItemText, { color: theme.colors.text.primary }]}>
-                    {item.icon} {item.name}
-                  </Text>
-                  <Text style={[styles.dropdownItemDescription, { color: theme.colors.text.muted }]}>
-                    {item.description}
-                  </Text>
+                <View style={styles.dropdownItemContent}>
+                  <View style={styles.dropdownItemIcon}>
+                    <Text style={styles.dropdownItemEmoji}>{item.icon}</Text>
+                  </View>
+                  <View style={styles.dropdownItemInfo}>
+                    <Text style={[
+                      styles.modernDropdownItemText,
+                      {
+                        color: value === item.id ? theme.colors.primary : theme.colors.text.primary,
+                        fontWeight: value === item.id ? '700' : '600'
+                      }
+                    ]}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.modernDropdownItemDescription, { color: theme.colors.text.muted }]}>
+                      {item.description}
+                    </Text>
+                  </View>
+                  {value === item.id && (
+                    <View style={styles.selectedIndicator}>
+                      <CheckCircle size={20} color={theme.colors.primary} />
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
+        </Animated.View>
       )}
     </View>
   );
@@ -394,7 +468,6 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
   const successScale = useRef(new Animated.Value(0)).current;
 
   const [currentStep, setCurrentStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<CustomerFormData>({
@@ -545,7 +618,6 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
     }
 
     setIsSubmitting(true);
-    setIsLoading(true);
     try {
       // Prepare customer data for Supabase
       const customerData: FormServiceCustomerData = {
@@ -622,7 +694,6 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
         showToast(errorMessage, 'error');
       }
     } finally {
-      setIsLoading(false);
       setIsSubmitting(false);
     }
   };
@@ -674,7 +745,7 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
         {isProfileStep && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
-              <Sparkles size={18} color={theme.colors.primary} /> Profile Picture
+              <Sparkles size={18} color={theme.colors.primary} /><Text> Profile Picture</Text>
             </Text>
             <TouchableOpacity
               style={[styles.imageUploadContainer, { borderColor: theme.colors.primary + '40' }]}
@@ -701,8 +772,7 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
-            {React.createElement(formSteps[currentStep].icon, { size: 18, color: theme.colors.primary })}
-            {' '}{formSteps[currentStep].title} Information
+            {React.createElement(formSteps[currentStep].icon, { size: 18, color: theme.colors.primary })} {formSteps[currentStep].title} Information
           </Text>
 
           {currentStepFields.map((field) => {
@@ -1197,19 +1267,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  modernDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 2,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    minHeight: 64,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
   dropdownContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownMainContent: {
     flex: 1,
   },
   dropdownButtonText: {
     fontSize: 16,
     fontWeight: '500',
   },
+  modernDropdownButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
+  },
   dropdownSubtext: {
     fontSize: 12,
     marginTop: 2,
   },
+  modernDropdownSubtext: {
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
   dropdownIcon: {
-    marginLeft: 8,
+    fontSize: 18,
   },
   dropdownList: {
     position: 'absolute',
@@ -1225,26 +1326,88 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.1)',
   },
+  modernDropdownList: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderRadius: 16,
+    elevation: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    zIndex: 10000,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  dropdownHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   dropdownListBottom: {
     top: '100%',
-    marginTop: 4,
+    marginTop: 8,
   },
   dropdownListTop: {
     bottom: '100%',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   dropdownItem: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
+  modernDropdownItem: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    minHeight: 70,
+  },
+  dropdownItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dropdownItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  dropdownItemEmoji: {
+    fontSize: 20,
+  },
+  dropdownItemInfo: {
+    flex: 1,
+  },
   dropdownItemText: {
     fontSize: 16,
     fontWeight: '500',
   },
+  modernDropdownItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
   dropdownItemDescription: {
     fontSize: 12,
     marginTop: 2,
+  },
+  modernDropdownItemDescription: {
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  selectedIndicator: {
+    marginLeft: 12,
   },
   addressRow: {
     flexDirection: 'row',

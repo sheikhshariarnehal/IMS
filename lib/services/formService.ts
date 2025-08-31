@@ -406,16 +406,6 @@ export class FormService {
   // Sale Operations
   static async createSale(saleData: any, userId: number): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
-      // Check authentication first
-      const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-      if (authError || !session) {
-        console.error('Authentication error:', authError);
-        return { success: false, error: 'User not authenticated' };
-      }
-
-      console.log('User authenticated, session exists:', !!session);
-
       await this.ensureUserContext(userId);
 
       const { data: sale, error } = await supabase
