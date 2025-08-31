@@ -14,6 +14,7 @@ import {
   Animated,
   TouchableWithoutFeedback,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {
   X,
@@ -28,9 +29,13 @@ import {
   CreditCard,
   Users,
   Info,
+  CheckCircle,
+  AlertCircle,
+  Loader,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { FormService, type CustomerFormData as FormServiceCustomerData } from '@/lib/services/formService';
 
 const { height: screenHeight } = Dimensions.get('window');
@@ -382,12 +387,16 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, steps, theme
 export default function CustomerAddForm({ visible, onClose, onSubmit, existingCustomer }: CustomerAddFormProps) {
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
+  const { showToast } = useToast();
   const slideAnim = useRef(new Animated.Value(-screenHeight)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const successScale = useRef(new Animated.Value(0)).current;
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<CustomerFormData>({
     name: '',
     email: '',
@@ -449,49 +458,93 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
     }
   }, [visible, existingCustomer]);
 
+  const validateField = (field: keyof CustomerFormData, value: string | boolean): string => {
+    const config = fieldConfig[field];
+
+    // Required field validation
+    if (config?.required && !value?.toString().trim()) {
+      return `${config.label} is required`;
+    }
+
+    // Field-specific validation
+    switch (field) {
+      case 'email':
+        if (value && typeof value === 'string' && value.trim()) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(value.trim())) {
+            return 'Please enter a valid email address';
+          }
+        }
+        break;
+
+      case 'phone':
+        if (value && typeof value === 'string' && value.trim()) {
+          const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+          const cleanPhone = value.replace(/[\s\-\(\)]/g, '');
+          if (cleanPhone.length < 10 || !phoneRegex.test(cleanPhone)) {
+            return 'Please enter a valid phone number (10+ digits)';
+          }
+        }
+        break;
+
+      case 'total_purchases':
+      case 'total_due':
+        if (value && typeof value === 'string' && value.trim()) {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue < 0) {
+            return 'Please enter a valid positive amount';
+          }
+        }
+        break;
+
+      case 'name':
+        if (value && typeof value === 'string' && value.trim().length < 2) {
+          return 'Name must be at least 2 characters long';
+        }
+        break;
+    }
+
+    return '';
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Validate required fields
-    Object.entries(fieldConfig).forEach(([field, config]) => {
-      if (config.required && !formData[field as keyof CustomerFormData]?.toString().trim()) {
-        newErrors[field] = `${config.label} is required`;
+    // Validate all fields
+    Object.keys(formData).forEach((field) => {
+      const error = validateField(field as keyof CustomerFormData, formData[field as keyof CustomerFormData]);
+      if (error) {
+        newErrors[field] = error;
       }
     });
-
-    // Email validation
-    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-
-    // Phone validation (basic)
-    if (formData.phone && formData.phone.length < 10) {
-      newErrors.phone = 'Please enter a valid phone number';
-    }
-
-    // Numeric field validation
-    if (formData.total_purchases && isNaN(parseFloat(formData.total_purchases))) {
-      newErrors.total_purchases = 'Please enter a valid amount';
-    }
-    if (formData.total_due && isNaN(parseFloat(formData.total_due))) {
-      newErrors.total_due = 'Please enter a valid amount';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleFieldChange = (field: keyof CustomerFormData, value: string | boolean) => {
+    updateFormData(field, value);
+
+    // Real-time validation
+    const error = validateField(field, value);
+    setErrors(prev => ({
+      ...prev,
+      [field]: error
+    }));
+  };
+
   const onSubmitForm = async () => {
     if (!canAddCustomer) {
-      Alert.alert('Permission Denied', 'You do not have permission to add customers.');
+      showToast('You do not have permission to add customers', 'error');
       return;
     }
 
     if (!validateForm()) {
-      Alert.alert('Validation Error', 'Please fill in all required fields correctly.');
+      showToast('Please fill in all required fields correctly', 'warning');
       return;
     }
 
+    setIsSubmitting(true);
     setIsLoading(true);
     try {
       // Prepare customer data for Supabase
@@ -508,7 +561,7 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
 
       // Get current user from auth context
       if (!user?.id) {
-        Alert.alert('Error', 'User not authenticated');
+        showToast('User not authenticated', 'error');
         return;
       }
 
@@ -516,31 +569,45 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
       const result = await FormService.createCustomer(customerData, user.id);
 
       if (result.success && result.data) {
-        Alert.alert(
-          'Success',
-          `Customer "${result.data.name}" has been ${existingCustomer ? 'updated' : 'created'} successfully!`,
-          [{ text: 'OK', onPress: () => {
-            // Transform the database result back to form data format
-            const transformedData: CustomerFormData = {
-              name: result.data!.name,
-              email: result.data!.email || '',
-              phone: result.data!.phone || '',
-              address: result.data!.address || '',
-              company_name: result.data!.company_name || '',
-              delivery_address: result.data!.delivery_address || '',
-              customer_type: result.data!.customer_type,
-              total_purchases: result.data!.total_purchases.toString(),
-              total_due: result.data!.total_due.toString(),
-              red_list_status: result.data!.red_list_status,
-              fixed_coupon: result.data!.fixed_coupon || '',
-              profile_picture: result.data!.profile_picture || ''
-            };
-            onSubmit(transformedData);
-            onClose();
-          } }]
+        // Show success animation
+        setShowSuccess(true);
+        Animated.spring(successScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+
+        // Show success toast
+        showToast(
+          `Customer "${result.data.name}" ${existingCustomer ? 'updated' : 'created'} successfully!`,
+          'success',
+          4000
         );
+
+        // Transform the database result back to form data format
+        const transformedData: CustomerFormData = {
+          name: result.data.name,
+          email: result.data.email || '',
+          phone: result.data.phone || '',
+          address: result.data.address || '',
+          company_name: result.data.company_name || '',
+          delivery_address: result.data.delivery_address || '',
+          customer_type: result.data.customer_type,
+          total_purchases: result.data.total_purchases.toString(),
+          total_due: result.data.total_due.toString(),
+          red_list_status: result.data.red_list_status,
+          fixed_coupon: result.data.fixed_coupon || '',
+          profile_picture: result.data.profile_picture || ''
+        };
+
+        // Close form after showing success animation
+        setTimeout(() => {
+          onSubmit(transformedData);
+          handleClose();
+        }, 2000);
       } else {
-        Alert.alert('Error', result.error || 'Failed to save customer');
+        showToast(result.error || 'Failed to save customer', 'error');
       }
     } catch (error: unknown) {
       console.error('Customer creation error:', error);
@@ -549,17 +616,36 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
       if (error instanceof Error && error.message.includes('Invalid hook call')) {
         console.error('Hook call error detected in CustomerAddForm');
         console.error('Stack trace:', error.stack);
-        Alert.alert(
-          'Development Error',
-          'Invalid hook call detected. This is a development issue that needs to be fixed.'
-        );
+        showToast('Development Error: Invalid hook call detected', 'error');
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Failed to save customer';
-        Alert.alert('Error', errorMessage);
+        showToast(errorMessage, 'error');
       }
     } finally {
       setIsLoading(false);
+      setIsSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    setShowSuccess(false);
+    setCurrentStep(0);
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      address: '',
+      company_name: '',
+      delivery_address: '',
+      customer_type: 'regular',
+      total_purchases: '0.00',
+      total_due: '0.00',
+      red_list_status: false,
+      fixed_coupon: '',
+      profile_picture: '',
+    });
+    setErrors({});
+    onClose();
   };
 
   const updateFormData = (field: keyof CustomerFormData, value: string | boolean) => {
@@ -647,7 +733,7 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
                       field={field}
                       fieldConfig={fieldConfig}
                       value={formData[field as keyof CustomerFormData]}
-                      onChangeText={(value) => updateFormData(field as keyof CustomerFormData, value)}
+                      onChangeText={(value) => handleFieldChange(field as keyof CustomerFormData, value)}
                       onBlur={() => { }}
                       errors={errors}
                       theme={theme}
@@ -716,7 +802,7 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
                   field={field}
                   fieldConfig={fieldConfig}
                   value={formData[field as keyof CustomerFormData]}
-                  onChangeText={(value) => updateFormData(field as keyof CustomerFormData, value)}
+                  onChangeText={(value) => handleFieldChange(field as keyof CustomerFormData, value)}
                   onBlur={() => { }}
                   errors={errors}
                   theme={theme}
@@ -814,17 +900,58 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.button, styles.submitButton]}
+                      style={[
+                        styles.button,
+                        styles.submitButton,
+                        isSubmitting && styles.submitButtonDisabled
+                      ]}
                       onPress={onSubmitForm}
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                     >
-                      <Text style={styles.submitButtonText}>
-                        {isLoading ? '⏳ Saving...' : `👤 ${existingCustomer ? 'Update' : 'Add'} Customer`}
-                      </Text>
+                      {isSubmitting ? (
+                        <View style={styles.loadingContainer}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>
+                            {existingCustomer ? 'Updating...' : 'Creating...'}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.submitButtonContent}>
+                          <User size={18} color="#FFFFFF" />
+                          <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>
+                            {existingCustomer ? 'Update Customer' : 'Add Customer'}
+                          </Text>
+                        </View>
+                      )}
                     </TouchableOpacity>
                   )}
                 </View>
               </KeyboardAvoidingView>
+
+              {/* Success Overlay */}
+              {showSuccess && (
+                <View style={styles.successOverlay}>
+                  <Animated.View
+                    style={[
+                      styles.successContainer,
+                      { transform: [{ scale: successScale }] }
+                    ]}
+                  >
+                    <View style={styles.successIcon}>
+                      <CheckCircle size={64} color="#10B981" />
+                    </View>
+                    <Text style={styles.successTitle}>
+                      {existingCustomer ? 'Customer Updated!' : 'Customer Created!'}
+                    </Text>
+                    <Text style={styles.successMessage}>
+                      {existingCustomer
+                        ? 'Customer information has been updated successfully'
+                        : 'New customer has been added to the system'
+                      }
+                    </Text>
+                  </Animated.View>
+                </View>
+              )}
             </Animated.View>
           </TouchableWithoutFeedback>
         </Animated.View>
@@ -836,50 +963,59 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-start',
-    paddingTop: 50,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 4,
   },
   container: {
     flex: 1,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginHorizontal: 8,
-    elevation: 10,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginHorizontal: 4,
+    elevation: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    maxHeight: '95%',
+    minHeight: '80%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    elevation: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingTop: Platform.OS === 'ios' ? 24 : 20,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    flex: 1,
   },
   closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 10,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    marginLeft: 16,
   },
   stepIndicator: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    paddingBottom: 16,
   },
   stepItem: {
     flex: 1,
@@ -887,17 +1023,20 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   stepCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   stepText: {
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   stepLine: {
     position: 'absolute',
@@ -909,19 +1048,19 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 28,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   imageUploadContainer: {
     height: 140,
@@ -972,41 +1111,48 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    letterSpacing: 0.2,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+    letterSpacing: 0.3,
   },
   requiredLabel: {
     // Color set dynamically
   },
   input: {
     borderWidth: 2,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    fontSize: 17,
     fontWeight: '500',
+    minHeight: 56,
   },
   inputError: {
     borderColor: '#EF4444',
+    borderWidth: 2,
   },
   textArea: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
+    paddingTop: 16,
   },
   errorText: {
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '500',
+    fontSize: 13,
+    marginTop: 6,
+    fontWeight: '600',
+    lineHeight: 18,
+    paddingHorizontal: 4,
   },
   infoText: {
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 13,
+    marginTop: 6,
     fontStyle: 'italic',
+    lineHeight: 18,
+    paddingHorizontal: 4,
   },
   booleanContainer: {
     marginVertical: 4,
@@ -1110,19 +1256,23 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     gap: 16,
-    padding: 20,
-    borderTopWidth: 2,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
   },
   button: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 18,
+    borderRadius: 16,
     alignItems: 'center',
-    elevation: 2,
+    justifyContent: 'center',
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    minHeight: 56,
   },
   backButton: {
     borderWidth: 2,
@@ -1143,10 +1293,67 @@ const styles = StyleSheet.create({
   submitButton: {
     backgroundColor: '#10B981',
   },
+  submitButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
+  },
+  submitButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  successOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10000,
+  },
+  successContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    maxWidth: 300,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIcon: {
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
   },
 });
