@@ -11,12 +11,22 @@ const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 export interface ProductFormData {
   name: string;
   product_code: string;
-  category_id: number;
+  category_id?: number;
   description?: string;
-  supplier_id: number;
-  location_id: number;
-  minimum_threshold: number;
+  purchase_price?: number;
+  selling_price?: number;
+  per_meter_price?: number;
+  supplier_id?: number;
+  location_id?: number;
+  minimum_threshold?: number;
+  current_stock?: number;
+  total_purchased?: number;
+  total_sold?: number;
+  wastage_status?: boolean;
+  product_status?: 'active' | 'slow' | 'inactive';
   unit_of_measurement?: string;
+  images?: any;
+  created_by?: number;
 }
 
 export interface CustomerFormData {
@@ -111,12 +121,34 @@ export class FormService {
     try {
       await this.ensureUserContext(userId);
 
+      // Prepare the product data with proper defaults
+      const productData = {
+        name: data.name,
+        product_code: data.product_code,
+        category_id: data.category_id || null,
+        description: data.description || null,
+        purchase_price: data.purchase_price || null,
+        selling_price: data.selling_price || null,
+        per_meter_price: data.per_meter_price || null,
+        supplier_id: data.supplier_id || null,
+        location_id: data.location_id || null,
+        minimum_threshold: data.minimum_threshold || 100,
+        current_stock: data.current_stock || 0,
+        total_stock: data.current_stock || 0,
+        total_purchased: data.total_purchased || 0,
+        total_sold: data.total_sold || 0,
+        wastage_status: data.wastage_status || false,
+        product_status: data.product_status || 'active',
+        unit_of_measurement: data.unit_of_measurement || 'meter',
+        images: data.images || null,
+        created_by: userId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
       const { data: product, error } = await supabase
         .from('products')
-        .insert([{
-          ...data,
-          created_by: userId,
-        }])
+        .insert([productData])
         .select()
         .single();
 
@@ -171,6 +203,21 @@ export class FormService {
       }));
     } catch (error) {
       console.error('Error fetching products:', error);
+      return [];
+    }
+  }
+
+  static async getExistingProducts(): Promise<any[]> {
+    try {
+      await this.ensureUserContext();
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, product_code')
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching existing products:', error);
       return [];
     }
   }
@@ -282,6 +329,18 @@ export class FormService {
   }
 
   // Category Operations
+  static async getCategories(): Promise<any[]> {
+    try {
+      await this.ensureUserContext();
+      const { data, error } = await supabase.from('categories').select('*').order('name');
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      return [];
+    }
+  }
+
   static async createCategory(data: CategoryFormData, userId: number): Promise<{ success: boolean; data?: Category; error?: string }> {
     try {
       await this.ensureUserContext(userId);
