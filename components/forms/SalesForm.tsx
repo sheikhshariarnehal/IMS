@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Animated,
   TouchableWithoutFeedback,
+  ActivityIndicator,
 } from 'react-native';
 import {
   X,
@@ -30,10 +31,15 @@ import {
   FileText,
   Save,
   CheckCircle,
+  Loader,
+  TrendingUp,
+  Receipt,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { FormService, type SaleFormData as FormServiceSaleData, type SaleItemFormData } from '@/lib/services/formService';
+import { supabase } from '@/lib/supabase';
 import type { Product, Customer, ProductLot } from '@/lib/supabase';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -68,9 +74,11 @@ interface SalesFormProps {
 export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: SalesFormProps) {
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
+  const { showToast } = useToast();
   const slideAnim = useRef(new Animated.Value(-screenHeight)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const successScale = useRef(new Animated.Value(0)).current;
 
   // Form data state
   const [formData, setFormData] = useState<SalesFormData>({
@@ -115,6 +123,8 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
   });
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [isDraft, setIsDraft] = useState(false);
 
   // Form steps for better UX
@@ -326,6 +336,77 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
     formData.otherCharges,
   ]);
 
+  // Validation functions
+  const validateField = (field: keyof SalesFormData, value: string): string => {
+    switch (field) {
+      case 'quantity':
+        if (value && selectedLot) {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue <= 0) {
+            return 'Please enter a valid positive quantity';
+          }
+          if (numValue > selectedLot.quantity) {
+            return `Quantity cannot exceed available stock (${selectedLot.quantity} units)`;
+          }
+        }
+        break;
+
+      case 'unitPrice':
+        if (value) {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue <= 0) {
+            return 'Please enter a valid positive price';
+          }
+        }
+        break;
+
+      case 'discountValue':
+        if (value) {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue < 0) {
+            return 'Please enter a valid discount amount';
+          }
+          if (formData.discountType === 'percentage' && numValue > 100) {
+            return 'Percentage discount cannot exceed 100%';
+          }
+        }
+        break;
+
+      case 'taxPercentage':
+        if (value) {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue < 0 || numValue > 100) {
+            return 'Please enter a valid tax percentage (0-100)';
+          }
+        }
+        break;
+
+      case 'paidAmount':
+        if (value && formData.paymentType !== 'due') {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue < 0) {
+            return 'Please enter a valid paid amount';
+          }
+          if (formData.paymentType === 'full' && numValue !== totals.total) {
+            return 'Paid amount must equal total for full payment';
+          }
+        }
+        break;
+    }
+    return '';
+  };
+
+  const handleFieldChange = (field: keyof SalesFormData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+
+    // Real-time validation
+    const error = validateField(field, value);
+    setErrors(prev => ({
+      ...prev,
+      [field]: error
+    }));
+  };
+
   // Handle product selection
   const handleProductSelect = useCallback(async (product: Product) => {
     setSelectedProduct(product);
@@ -417,47 +498,68 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
     setIsLoading(true);
     try {
-      // Prepare sale data for Supabase
-      const saleData: FormServiceSaleData = {
-        customer_id: selectedCustomer?.id ? parseInt(selectedCustomer.id) : undefined,
+      // Get current user from auth context
+      if (!user?.id) {
+        showToast('User not authenticated', 'error');
+        return;
+      }
+
+      // Prepare sale data for Supabase (matching actual database schema)
+      const saleData = {
+        customer_id: parseInt(selectedCustomer!.id),
         subtotal: totals.subtotal,
         discount_amount: totals.discountAmount,
         tax_amount: totals.taxAmount,
         total_amount: totals.total,
-        payment_method: formData.paymentMethod as 'cash' | 'card' | 'bank_transfer' | 'mobile_banking',
-        delivery_person: formData.notes || undefined, // Using notes as delivery person for now
+        paid_amount: formData.paymentType === 'full' ? totals.total :
+                    formData.paymentType === 'partial' ? parseFloat(formData.paidAmount || '0') : 0,
+        due_amount: formData.paymentType === 'full' ? 0 :
+                   formData.paymentType === 'partial' ? totals.total - parseFloat(formData.paidAmount || '0') :
+                   totals.total,
+        payment_method: formData.paymentMethod,
+        payment_status: formData.paymentType === 'full' ? 'paid' : (formData.paymentType === 'partial' ? 'partial' : 'pending'),
+        delivery_person: formData.notes || undefined,
         location_id: selectedProduct?.location_id ? parseInt(selectedProduct.location_id) : undefined,
-        items: [{
+      };
+
+      const result = await FormService.createSale(saleData, user.id);
+
+      if (result.success && result.data) {
+        // Create sale item after successful sale creation
+        const saleItemData = {
+          sale_id: result.data.id,
           product_id: parseInt(selectedProduct!.id),
+          lot_id: selectedLot?.id ? parseInt(selectedLot.id) : null,
           quantity: parseFloat(formData.quantity),
           unit_price: parseFloat(formData.unitPrice),
           total_price: totals.subtotal
-        }]
-      };
+        };
 
-      // Get current user from auth context
-      if (!user?.id) {
-        Alert.alert('Error', 'User not authenticated');
-        return;
-      }
+        // Insert sale item
+        const { error: itemError } = await supabase
+          .from('sale_items')
+          .insert([saleItemData]);
 
-      // Create sale using FormService with lot-specific data
-      const lotSaleData = {
-        productId: selectedProduct!.id,
-        lotId: selectedLot!.id,
-        customerId: selectedCustomer!.id,
-        quantity: formData.quantity,
-        unitPrice: formData.unitPrice,
-        discountType: formData.discountType,
-        discountAmount: totals.discountAmount.toString(),
-        paymentMethod: formData.paymentMethod,
-        paymentStatus: formData.paymentType === 'full' ? 'paid' : (formData.paymentType === 'partial' ? 'partial' : 'pending'),
-        notes: formData.notes
-      };
+        if (itemError) {
+          console.error('Error creating sale item:', itemError);
+          showToast('Sale created but failed to add item details', 'warning');
+        }
+        // Show success animation
+        setShowSuccess(true);
+        Animated.spring(successScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
 
-      const result = await FormService.createSale(lotSaleData, user.id);
+        // Show success toast
+        showToast(
+          `Sale completed successfully! Sale #${result.data.sale_number} - Total: ৳${totals.total.toLocaleString()}`,
+          'success',
+          5000
+        );
 
-      if (result.success && result.data) {
         // Call the original submission handler for UI updates
         await onSubmit({
           ...saleData,
@@ -465,37 +567,27 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
           sale_number: result.data.sale_number
         });
 
-        // Show success message with invoice option
-        Alert.alert(
-          '🎉 Sale Completed!',
-          `Sale has been completed successfully!\n\nSale Number: ${result.data.sale_number}\nTotal: ৳${totals.total.toLocaleString()}\nCustomer: ${selectedCustomer!.name}`,
-          [
-            {
-              text: '📄 View Invoice',
-              onPress: () => {
-                // TODO: Implement invoice preview
-                Alert.alert('Invoice', 'Invoice preview will be implemented next!');
-              }
-            },
-            {
-              text: '✅ Done',
-              style: 'default'
-            }
-          ]
-        );
+        // Close form after showing success animation
+        setTimeout(() => {
+          handleClose();
+        }, 2500);
       } else {
-        Alert.alert('Error', result.error || 'Failed to create sale');
+        showToast(result.error || 'Failed to create sale', 'error');
       }
     } catch (error) {
       console.error('Error completing sale:', error);
-      Alert.alert(
-        'Sale Failed',
-        'Failed to complete the sale. Please try again.',
-        [{ text: 'OK' }]
-      );
+      showToast('Failed to complete the sale. Please try again.', 'error');
     } finally {
       setIsLoading(false);
+      setIsSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    setShowSuccess(false);
+    setCurrentStep(0);
+    resetForm();
+    onClose();
   };
 
   // Render step indicator
@@ -557,45 +649,81 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
     return (
       <View style={styles.dropdownContainer}>
+        <Text style={[styles.dropdownLabel, { color: theme.colors.text.primary }]}>
+          Product <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
         <View style={[
-          styles.searchInputContainer,
-          { borderColor: errors.productId ? theme.colors.status.error : theme.colors.primary + '30' },
-          showDropdowns.product && styles.searchInputContainerActive,
+          styles.modernSearchContainer,
+          {
+            borderColor: errors.productId ? theme.colors.status.error :
+                        showDropdowns.product ? theme.colors.primary :
+                        theme.colors.border,
+            backgroundColor: theme.colors.background,
+            shadowColor: showDropdowns.product ? theme.colors.primary : 'transparent',
+          },
+          showDropdowns.product && styles.modernSearchContainerActive,
+          errors.productId && styles.modernSearchContainerError,
         ]}>
-          <Package size={20} color={theme.colors.primary} style={styles.inputIcon} />
-          <TextInput
-            style={styles.searchInput}
-            value={showDropdowns.product ? searchTexts.product : (selectedProduct?.name || '')}
-            onChangeText={(text) => {
-              setSearchTexts(prev => ({ ...prev, product: text }));
-              if (!showDropdowns.product) {
-                setShowDropdowns(prev => ({ ...prev, product: true }));
-              }
-            }}
-            onFocus={() => setShowDropdowns(prev => ({ ...prev, product: true }))}
-            placeholder="Search products..."
-            placeholderTextColor={theme.colors.text.muted}
-          />
-          <TouchableOpacity
-            style={styles.dropdownIconContainer}
-            onPress={() => setShowDropdowns(prev => ({ ...prev, product: !prev.product }))}
-          >
-            <ChevronDown
+          <View style={styles.searchInputWrapper}>
+            <Package
               size={20}
-              color={theme.colors.text.muted}
-              style={[
-                styles.dropdownIcon,
-                showDropdowns.product && { transform: [{ rotate: '180deg' }] }
-              ]}
+              color={showDropdowns.product ? theme.colors.primary : theme.colors.text.muted}
+              style={styles.modernInputIcon}
             />
-          </TouchableOpacity>
+            <TextInput
+              style={[styles.modernSearchInput, { color: theme.colors.text.primary }]}
+              value={showDropdowns.product ? searchTexts.product : (selectedProduct?.name || '')}
+              onChangeText={(text) => {
+                setSearchTexts(prev => ({ ...prev, product: text }));
+                if (!showDropdowns.product) {
+                  setShowDropdowns(prev => ({ ...prev, product: true }));
+                }
+              }}
+              onFocus={() => setShowDropdowns(prev => ({ ...prev, product: true }))}
+              placeholder={selectedProduct ? selectedProduct.name : "Search products..."}
+              placeholderTextColor={theme.colors.text.muted}
+            />
+            <TouchableOpacity
+              style={styles.modernDropdownButton}
+              onPress={() => setShowDropdowns(prev => ({ ...prev, product: !prev.product }))}
+              activeOpacity={0.7}
+            >
+              <ChevronDown
+                size={20}
+                color={theme.colors.text.muted}
+                style={[
+                  styles.modernDropdownIcon,
+                  showDropdowns.product && { transform: [{ rotate: '180deg' }] }
+                ]}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
+        {errors.productId && (
+          <Text style={[styles.errorText, { color: theme.colors.status.error }]}>
+            {errors.productId}
+          </Text>
+        )}
 
         {showDropdowns.product && (
-          <View style={[styles.dropdownList, { backgroundColor: theme.colors.background }]}>
+          <View style={[
+            styles.modernDropdownList,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              shadowColor: theme.colors.text.primary,
+            }
+          ]}>
+            {filteredProducts.length > 0 && (
+              <View style={[styles.dropdownHeader, { borderBottomColor: theme.colors.border }]}>
+                <Text style={[styles.dropdownHeaderText, { color: theme.colors.text.muted }]}>
+                  {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''} found
+                </Text>
+              </View>
+            )}
             <ScrollView
               nestedScrollEnabled={true}
-              style={{ maxHeight: 200 }}
+              style={{ maxHeight: 280 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               removeClippedSubviews={true}
@@ -603,42 +731,80 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
               decelerationRate="fast"
               bounces={false}
               overScrollMode="never"
+              contentContainerStyle={{ paddingVertical: 4 }}
             >
-              {filteredProducts.length > 0 ? filteredProducts.map((product) => (
+              {filteredProducts.length > 0 ? filteredProducts.map((product, index) => (
                 <TouchableOpacity
                   key={product.id}
-                  style={styles.dropdownItem}
+                  style={[
+                    styles.modernDropdownItem,
+                    {
+                      backgroundColor: theme.colors.background,
+                      borderBottomColor: theme.colors.border,
+                      borderBottomWidth: index < filteredProducts.length - 1 ? 0.5 : 0,
+                    }
+                  ]}
                   onPress={() => handleProductSelect(product)}
                   activeOpacity={0.7}
                   delayPressIn={0}
                 >
-                  <View style={styles.productItemContent}>
-                    <View style={styles.productItemHeader}>
-                      <Text style={styles.productItemName}>{product.name}</Text>
-                      <Text style={styles.productItemCode}>{product.product_code}</Text>
-                    </View>
-                    <View style={styles.productItemDetails}>
-                      <Text style={styles.productItemCategory}>{product.category}</Text>
-                      <View style={styles.productItemStock}>
-                        <Text style={[
-                          styles.productItemStockText,
-                          { color: product.current_stock > 0 ? theme.colors.status.success : theme.colors.status.error }
-                        ]}>
-                          Stock: {product.current_stock} {product.unit_of_measure}
+                  <View style={styles.modernProductContent}>
+                    <View style={styles.modernProductHeader}>
+                      <View style={styles.modernProductTitleRow}>
+                        <Text style={[styles.modernProductName, { color: theme.colors.text.primary }]} numberOfLines={1}>
+                          {product.name}
                         </Text>
-                        {product.current_stock === 0 && (
-                          <AlertTriangle size={16} color={theme.colors.status.error} />
-                        )}
+                        <View style={[
+                          styles.modernStockBadge,
+                          {
+                            backgroundColor: product.current_stock > 0 ?
+                              theme.colors.status.success + '15' :
+                              theme.colors.status.error + '15'
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.modernStockText,
+                            { color: product.current_stock > 0 ? theme.colors.status.success : theme.colors.status.error }
+                          ]}>
+                            {product.current_stock} {product.unit_of_measure}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.modernProductSubRow}>
+                        <Text style={[styles.modernProductCode, { color: theme.colors.text.muted }]}>
+                          {product.product_code}
+                        </Text>
+                        <Text style={[styles.modernProductCategory, { color: theme.colors.text.secondary }]}>
+                          {product.category}
+                        </Text>
                       </View>
                     </View>
-                    <Text style={styles.productItemPrice}>
-                      {product.selling_price ? `৳${product.selling_price}` : 'Price varies by lot'}
-                    </Text>
+                    <View style={styles.modernProductFooter}>
+                      <Text style={[styles.modernProductPrice, { color: theme.colors.primary }]}>
+                        {product.selling_price ? `৳${product.selling_price.toLocaleString()}` : 'Price varies by lot'}
+                      </Text>
+                      {product.current_stock === 0 && (
+                        <View style={styles.modernOutOfStockBadge}>
+                          <AlertTriangle size={12} color={theme.colors.status.error} />
+                          <Text style={[styles.modernOutOfStockText, { color: theme.colors.status.error }]}>
+                            Out of Stock
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </TouchableOpacity>
               )) : (
-                <View style={styles.noResultsContainer}>
-                  <Text style={styles.noResultsText}>No products found</Text>
+                <View style={[styles.modernNoResultsContainer, { backgroundColor: theme.colors.background }]}>
+                  <View style={[styles.modernNoResultsIcon, { backgroundColor: theme.colors.text.muted + '10' }]}>
+                    <Package size={32} color={theme.colors.text.muted} />
+                  </View>
+                  <Text style={[styles.modernNoResultsTitle, { color: theme.colors.text.primary }]}>
+                    No products found
+                  </Text>
+                  <Text style={[styles.modernNoResultsSubtext, { color: theme.colors.text.muted }]}>
+                    Try searching with different keywords or check your spelling
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -791,96 +957,162 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
   const renderCustomerDropdown = () => {
     const filteredCustomers = customers.filter(customer =>
       customer.name.toLowerCase().includes(searchTexts.customer.toLowerCase()) ||
-      customer.phone.includes(searchTexts.customer) ||
-      customer.email.toLowerCase().includes(searchTexts.customer.toLowerCase())
+      customer.phone?.includes(searchTexts.customer) ||
+      customer.email?.toLowerCase().includes(searchTexts.customer.toLowerCase())
     );
 
     return (
       <View style={styles.dropdownContainer}>
+        <Text style={[styles.dropdownLabel, { color: theme.colors.text.primary }]}>
+          Customer <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
         <View style={[
-          styles.searchInputContainer,
-          { borderColor: errors.customerId ? theme.colors.status.error : theme.colors.primary + '30' },
-          showDropdowns.customer && styles.searchInputContainerActive,
+          styles.modernSearchContainer,
+          {
+            borderColor: errors.customerId ? theme.colors.status.error :
+                        showDropdowns.customer ? theme.colors.primary :
+                        theme.colors.border,
+            backgroundColor: theme.colors.background,
+            shadowColor: showDropdowns.customer ? theme.colors.primary : 'transparent',
+          },
+          showDropdowns.customer && styles.modernSearchContainerActive,
+          errors.customerId && styles.modernSearchContainerError,
         ]}>
-          <User size={20} color={theme.colors.primary} style={styles.inputIcon} />
-          <TextInput
-            style={styles.searchInput}
-            value={showDropdowns.customer ? searchTexts.customer : (selectedCustomer?.name || '')}
-            onChangeText={(text) => {
-              setSearchTexts(prev => ({ ...prev, customer: text }));
-              if (!showDropdowns.customer) {
-                setShowDropdowns(prev => ({ ...prev, customer: true }));
-              }
-            }}
-            onFocus={() => setShowDropdowns(prev => ({ ...prev, customer: true }))}
-            placeholder="Search customers..."
-            placeholderTextColor={theme.colors.text.muted}
-          />
-          <TouchableOpacity
-            style={styles.dropdownIconContainer}
-            onPress={() => setShowDropdowns(prev => ({ ...prev, customer: !prev.customer }))}
-          >
-            <ChevronDown
+          <View style={styles.searchInputWrapper}>
+            <User
               size={20}
-              color={theme.colors.text.muted}
-              style={[
-                styles.dropdownIcon,
-                showDropdowns.customer && { transform: [{ rotate: '180deg' }] }
-              ]}
+              color={showDropdowns.customer ? theme.colors.primary : theme.colors.text.muted}
+              style={styles.modernInputIcon}
             />
-          </TouchableOpacity>
+            <TextInput
+              style={[styles.modernSearchInput, { color: theme.colors.text.primary }]}
+              value={showDropdowns.customer ? searchTexts.customer : (selectedCustomer?.name || '')}
+              onChangeText={(text) => {
+                setSearchTexts(prev => ({ ...prev, customer: text }));
+                if (!showDropdowns.customer) {
+                  setShowDropdowns(prev => ({ ...prev, customer: true }));
+                }
+              }}
+              onFocus={() => setShowDropdowns(prev => ({ ...prev, customer: true }))}
+              placeholder={selectedCustomer ? selectedCustomer.name : "Search customers..."}
+              placeholderTextColor={theme.colors.text.muted}
+            />
+            <TouchableOpacity
+              style={styles.modernDropdownButton}
+              onPress={() => setShowDropdowns(prev => ({ ...prev, customer: !prev.customer }))}
+              activeOpacity={0.7}
+            >
+              <ChevronDown
+                size={20}
+                color={theme.colors.text.muted}
+                style={[
+                  styles.modernDropdownIcon,
+                  showDropdowns.customer && { transform: [{ rotate: '180deg' }] }
+                ]}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
+        {errors.customerId && (
+          <Text style={[styles.errorText, { color: theme.colors.status.error }]}>
+            {errors.customerId}
+          </Text>
+        )}
 
         {showDropdowns.customer && (
-          <View style={[styles.dropdownList, { backgroundColor: theme.colors.background }]}>
+          <View style={[
+            styles.modernDropdownList,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              shadowColor: theme.colors.text.primary,
+            }
+          ]}>
+            {filteredCustomers.length > 0 && (
+              <View style={[styles.dropdownHeader, { borderBottomColor: theme.colors.border }]}>
+                <Text style={[styles.dropdownHeaderText, { color: theme.colors.text.muted }]}>
+                  {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} found
+                </Text>
+              </View>
+            )}
             <ScrollView
               nestedScrollEnabled={true}
-              style={{ maxHeight: 200 }}
+              style={{ maxHeight: 280 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              removeClippedSubviews={true}
-              scrollEventThrottle={16}
-              decelerationRate="fast"
-              bounces={false}
-              overScrollMode="never"
+              contentContainerStyle={{ paddingVertical: 4 }}
             >
-              {filteredCustomers.length > 0 ? filteredCustomers.map((customer) => (
+              {filteredCustomers.length > 0 ? filteredCustomers.map((customer, index) => (
                 <TouchableOpacity
                   key={customer.id}
-                  style={styles.dropdownItem}
+                  style={[
+                    styles.modernDropdownItem,
+                    {
+                      backgroundColor: theme.colors.background,
+                      borderBottomColor: theme.colors.border,
+                      borderBottomWidth: index < filteredCustomers.length - 1 ? 0.5 : 0,
+                    }
+                  ]}
                   onPress={() => handleCustomerSelect(customer)}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.customerItemContent}>
-                    <View style={styles.customerItemHeader}>
-                      <Text style={styles.customerItemName}>{customer.name}</Text>
-                      <View style={styles.customerBadges}>
-                        {customer.customer_type === 'VIP' && (
-                          <View style={[styles.customerBadge, { backgroundColor: '#FFD700' }]}>
-                            <Text style={styles.customerBadgeText}>👑 VIP</Text>
-                          </View>
+                  <View style={styles.modernCustomerContent}>
+                    <View style={styles.modernCustomerHeader}>
+                      <View style={styles.modernCustomerTitleRow}>
+                        <Text style={[styles.modernCustomerName, { color: theme.colors.text.primary }]} numberOfLines={1}>
+                          {customer.name}
+                        </Text>
+                        <View style={styles.modernCustomerBadges}>
+                          {customer.customer_type === 'VIP' && (
+                            <View style={[styles.modernVipBadge, { backgroundColor: '#FFD700' + '20' }]}>
+                              <Text style={[styles.modernVipText, { color: '#B8860B' }]}>
+                                👑 VIP
+                              </Text>
+                            </View>
+                          )}
+                          {customer.is_red_listed && (
+                            <View style={[styles.modernRedListBadge, { backgroundColor: theme.colors.status.error + '15' }]}>
+                              <AlertTriangle size={10} color={theme.colors.status.error} />
+                              <Text style={[styles.modernRedListText, { color: theme.colors.status.error }]}>
+                                Red Listed
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.modernCustomerSubRow}>
+                        {customer.phone && (
+                          <Text style={[styles.modernCustomerPhone, { color: theme.colors.text.muted }]}>
+                            📞 {customer.phone}
+                          </Text>
                         )}
-                        {customer.is_red_listed && (
-                          <View style={[styles.customerBadge, { backgroundColor: theme.colors.status.error }]}>
-                            <Text style={[styles.customerBadgeText, { color: '#FFFFFF' }]}>🚫 Red Listed</Text>
-                          </View>
+                        {customer.email && (
+                          <Text style={[styles.modernCustomerEmail, { color: theme.colors.text.secondary }]} numberOfLines={1}>
+                            ✉️ {customer.email}
+                          </Text>
                         )}
                       </View>
+                      {customer.outstanding_amount > 0 && (
+                        <View style={styles.modernCustomerFooter}>
+                          <Text style={[styles.modernCustomerDue, { color: theme.colors.status.error }]}>
+                            Outstanding: ৳{customer.outstanding_amount.toLocaleString()}
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                    <View style={styles.customerItemDetails}>
-                      <Text style={styles.customerItemPhone}>{customer.phone}</Text>
-                      <Text style={styles.customerItemEmail}>{customer.email}</Text>
-                    </View>
-                    <Text style={styles.customerItemAddress}>{customer.address}</Text>
-                    {customer.outstanding_amount > 0 && (
-                      <Text style={[styles.customerItemDue, { color: theme.colors.status.error }]}>
-                        Outstanding: ৳{customer.outstanding_amount.toLocaleString()}
-                      </Text>
-                    )}
                   </View>
                 </TouchableOpacity>
               )) : (
-                <View style={styles.noResultsContainer}>
-                  <Text style={styles.noResultsText}>No customers found</Text>
+                <View style={[styles.modernNoResultsContainer, { backgroundColor: theme.colors.background }]}>
+                  <View style={[styles.modernNoResultsIcon, { backgroundColor: theme.colors.text.muted + '10' }]}>
+                    <User size={32} color={theme.colors.text.muted} />
+                  </View>
+                  <Text style={[styles.modernNoResultsTitle, { color: theme.colors.text.primary }]}>
+                    No customers found
+                  </Text>
+                  <Text style={[styles.modernNoResultsSubtext, { color: theme.colors.text.muted }]}>
+                    Try searching with name, phone, or email
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -901,9 +1133,7 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, styles.requiredLabel]}>Product *</Text>
           {renderProductDropdown()}
-          {errors.productId && <Text style={styles.errorText}>{errors.productId}</Text>}
         </View>
 
         {/* Show selected product stock info */}
@@ -941,9 +1171,7 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, styles.requiredLabel]}>Customer *</Text>
           {renderCustomerDropdown()}
-          {errors.customerId && <Text style={styles.errorText}>{errors.customerId}</Text>}
         </View>
 
         {/* Show customer warning if red listed */}
@@ -1607,15 +1835,15 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
                       onPress={() => {
                         // Validate current step before proceeding
                         if (currentStep === 0 && (!selectedProduct || !selectedCustomer)) {
-                          Alert.alert('Incomplete', 'Please select both product and customer.');
+                          showToast('Please select both product and customer', 'warning');
                           return;
                         }
                         if (currentStep === 1 && (!selectedLot || !formData.quantity)) {
-                          Alert.alert('Incomplete', 'Please select lot and enter quantity.');
+                          showToast('Please select lot and enter quantity', 'warning');
                           return;
                         }
                         if (currentStep === 1 && parseFloat(formData.quantity) > selectedLot!.quantity) {
-                          Alert.alert('Invalid Quantity', `Quantity cannot exceed available stock. Available: ${selectedLot!.quantity} units`);
+                          showToast(`Quantity cannot exceed available stock. Available: ${selectedLot!.quantity} units`, 'error');
                           return;
                         }
                         setCurrentStep(prev => prev + 1);
@@ -1625,17 +1853,59 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.button, styles.submitButton, { backgroundColor: '#10B981' }]}
-                      onPress={handleFinalSubmission}
-                      disabled={isLoading}
+                      style={[
+                        styles.button,
+                        styles.submitButton,
+                        { backgroundColor: '#10B981' },
+                        isSubmitting && styles.submitButtonDisabled
+                      ]}
+                      onPress={() => {
+                        setIsSubmitting(true);
+                        handleFinalSubmission();
+                      }}
+                      disabled={isSubmitting}
                     >
-                      <Text style={styles.submitButtonText}>
-                        {isLoading ? '⏳ Processing...' : '🚀 Complete Sale'}
-                      </Text>
+                      {isSubmitting ? (
+                        <View style={styles.loadingContainer}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>
+                            Processing Sale...
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.submitButtonContent}>
+                          <Receipt size={18} color="#FFFFFF" />
+                          <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>
+                            Complete Sale
+                          </Text>
+                        </View>
+                      )}
                     </TouchableOpacity>
                   )}
                 </View>
               </KeyboardAvoidingView>
+
+              {/* Success Overlay */}
+              {showSuccess && (
+                <View style={styles.successOverlay}>
+                  <Animated.View
+                    style={[
+                      styles.successContainer,
+                      { transform: [{ scale: successScale }] }
+                    ]}
+                  >
+                    <View style={styles.successIcon}>
+                      <CheckCircle size={64} color="#10B981" />
+                    </View>
+                    <Text style={styles.successTitle}>
+                      Sale Completed!
+                    </Text>
+                    <Text style={styles.successMessage}>
+                      Your sale has been processed successfully and is ready for delivery
+                    </Text>
+                  </Animated.View>
+                </View>
+              )}
             </Animated.View>
           </TouchableWithoutFeedback>
         </Animated.View>
@@ -1647,40 +1917,47 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-start',
-    paddingTop: 50,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 4,
   },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginHorizontal: 8,
-    elevation: 10,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginHorizontal: 4,
+    elevation: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    maxHeight: '95%',
+    minHeight: '85%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingTop: Platform.OS === 'ios' ? 24 : 20,
     backgroundColor: '#2563eb',
-    elevation: 4,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
@@ -1745,17 +2022,24 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
   searchInputContainer: {
-    borderWidth: 2,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: '#f8fafc',
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 56,
   },
   searchInputContainerActive: {
     borderColor: '#2563eb',
+    borderWidth: 2,
     backgroundColor: '#2563eb10',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
   inputIcon: {
     marginRight: 12,
@@ -2477,5 +2761,317 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     flex: 1,
     textAlign: 'right',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
+  },
+  submitButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noResultsContainer: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noResultsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  successOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10000,
+  },
+  successContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    maxWidth: 300,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIcon: {
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  // Modern dropdown styles
+  dropdownLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  requiredAsterisk: {
+    color: '#EF4444',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modernSearchContainer: {
+    borderWidth: 1,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modernSearchContainerActive: {
+    borderWidth: 2,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  modernSearchContainerError: {
+    borderColor: '#EF4444',
+    shadowColor: '#EF4444',
+  },
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 56,
+  },
+  modernInputIcon: {
+    marginRight: 12,
+  },
+  modernSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  modernDropdownButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  modernDropdownIcon: {
+    transition: 'transform 0.2s ease',
+  },
+  modernDropdownList: {
+    marginTop: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    maxHeight: 320,
+  },
+  dropdownHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  dropdownHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modernDropdownItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  modernProductContent: {
+    flex: 1,
+  },
+  modernProductHeader: {
+    marginBottom: 8,
+  },
+  modernProductTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  modernProductName: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 12,
+  },
+  modernStockBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  modernStockText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modernProductSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modernProductCode: {
+    fontSize: 13,
+    fontWeight: '500',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  modernProductCategory: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  modernProductFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modernProductPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modernOutOfStockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modernOutOfStockText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  modernCustomerContent: {
+    flex: 1,
+  },
+  modernCustomerHeader: {
+    flex: 1,
+  },
+  modernCustomerTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  modernCustomerName: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 12,
+  },
+  modernCustomerBadges: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  modernVipBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modernVipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modernRedListBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  modernRedListText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  modernCustomerSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modernCustomerPhone: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  modernCustomerEmail: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'right',
+  },
+  modernCustomerFooter: {
+    marginTop: 6,
+  },
+  modernCustomerDue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modernNoResultsContainer: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modernNoResultsIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modernNoResultsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modernNoResultsSubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

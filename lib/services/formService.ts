@@ -69,15 +69,17 @@ export interface SaleFormData {
   total_amount: number;
   paid_amount?: number;
   due_amount?: number;
-  payment_method?: string;
-  payment_status: string;
-  sale_status: string;
   due_date?: string;
+  payment_method?: string;
+  payment_status?: string;
+  sale_status?: string;
+  delivery_person?: string;
+  delivery_photo?: string;
   location_id?: number;
-  notes?: string;
+  created_by?: number;
   items: Array<{
     product_id: number;
-    lot_id: number;
+    lot_id?: number;
     quantity: number;
     unit_price: number;
     total_price: number;
@@ -203,6 +205,28 @@ export class FormService {
       }));
     } catch (error) {
       console.error('Error fetching products:', error);
+      return [];
+    }
+  }
+
+  static async getProductLots(productId: number): Promise<any[]> {
+    try {
+      await this.ensureUserContext();
+
+      const { data, error } = await supabase
+        .from('products_lot')
+        .select('*')
+        .eq('product_id', productId)
+        .gt('quantity', 0) // Only get lots with available quantity
+        .order('lot_number', { ascending: true }); // FIFO order
+
+      if (error) {
+        console.error('Error fetching product lots:', error);
+        return [];
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching product lots:', error);
       return [];
     }
   }
@@ -382,6 +406,16 @@ export class FormService {
   // Sale Operations
   static async createSale(saleData: any, userId: number): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
+      // Check authentication first
+      const { data: { session }, error: authError } = await supabase.auth.getSession();
+
+      if (authError || !session) {
+        console.error('Authentication error:', authError);
+        return { success: false, error: 'User not authenticated' };
+      }
+
+      console.log('User authenticated, session exists:', !!session);
+
       await this.ensureUserContext(userId);
 
       const { data: sale, error } = await supabase
