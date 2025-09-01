@@ -239,12 +239,23 @@ const TransferPage = React.memo(function TransferPage() {
     setShowTransferForm(true);
   };
 
-  const handleTransferSubmit = (transferData: any) => {
-    // Refresh the data after successful transfer
-    fetchProducts();
-    fetchTransferRequests();
-    setShowTransferForm(false);
-    setSelectedProduct(null);
+  const handleTransferSubmit = async (transferData: any) => {
+    try {
+      // Show immediate feedback
+      console.log('Transfer completed:', transferData);
+
+      // Refresh the data after successful transfer
+      await Promise.all([
+        fetchProducts(),
+        fetchTransferRequests()
+      ]);
+
+      // Reset form state
+      setShowTransferForm(false);
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('Error refreshing data after transfer:', error);
+    }
   };
 
   const onRefresh = async () => {
@@ -736,7 +747,6 @@ const TransferPage = React.memo(function TransferPage() {
         }}
         onSubmit={handleTransferSubmit}
         product={selectedProduct}
-        locations={[]}
       />
     </SharedLayout>
   );

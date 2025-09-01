@@ -14,6 +14,7 @@ import {
   Animated,
   TouchableWithoutFeedback,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import {
   X,
@@ -59,9 +60,8 @@ interface Location {
 interface TransferFormProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (data: TransferFormData) => void;
+  onSubmit: (data: any) => void;
   product: any;
-  locations: string[];
 }
 
 export default function TransferForm({ visible, onClose, onSubmit, product }: TransferFormProps) {
@@ -181,18 +181,24 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       setShowLotSelection(false);
     } else if (!visible) {
       // Reset everything when modal closes
-      setFormData(initialFormState);
-      setErrors({});
-      setCurrentStep(0);
-      setSearchText('');
-      setShowLocationDropdown(false);
-      setShowLotSelection(false);
-      setLoading(false);
+      resetForm();
     }
   }, [visible, product]);
 
   const handlePressOutside = () => {
+    if (!loading) {
+      setShowLocationDropdown(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData(initialFormState);
+    setCurrentStep(0);
+    setErrors({});
+    setSearchText('');
     setShowLocationDropdown(false);
+    setShowLotSelection(false);
+    setLoading(false);
   };
 
   const handleLotSelection = (lot: any) => {
@@ -276,27 +282,37 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       const result = await FormService.createTransferWithLot(transferData, user.id);
 
       if (result.success && result.data) {
-        // Reset form state
-        setFormData(initialFormState);
-        setCurrentStep(0);
-        setErrors({});
-        setSearchText('');
-        setShowLocationDropdown(false);
-        setShowLotSelection(false);
+        // Store form data for success message before reset
+        const transferDetails = {
+          productName: formData.productName,
+          quantity: formData.quantity,
+          sourceLocationName: formData.sourceLocationName,
+          destinationLocationName: formData.destinationLocationName,
+        };
 
-        Alert.alert(
-          'Success',
-          'Transfer request has been created successfully! A new lot has been created at the destination location.',
-          [{
-            text: 'OK',
-            onPress: () => {
-              onSubmit(result.data);
-              onClose();
-            }
-          }]
-        );
+        // Call onSubmit to refresh parent data
+        onSubmit(result.data);
+
+        // Reset form state immediately
+        resetForm();
+
+        // Close modal immediately
+        onClose();
+
+        // Show success message after modal is closed
+        setTimeout(() => {
+          Alert.alert(
+            '✅ Transfer Successful!',
+            `Transfer completed successfully!\n\n• Product: ${transferDetails.productName}\n• Quantity: ${transferDetails.quantity} units\n• From: ${transferDetails.sourceLocationName}\n• To: ${transferDetails.destinationLocationName}\n\nA new lot has been created at the destination location.`,
+            [{ text: 'OK' }]
+          );
+        }, 300);
       } else {
-        Alert.alert('Error', result.error || 'Failed to create transfer request');
+        Alert.alert(
+          '❌ Transfer Failed',
+          result.error || 'Failed to create transfer request. Please try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('Transfer creation error:', error);
@@ -1343,6 +1359,44 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       marginTop: 4,
       fontStyle: 'italic',
     },
+    loadingOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 9999,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+    },
+    loadingContainer: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 16,
+      padding: 32,
+      alignItems: 'center',
+      minWidth: 200,
+      elevation: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+    },
+    loadingText: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.colors.text.primary,
+      marginTop: 16,
+      textAlign: 'center',
+    },
+    loadingSubtext: {
+      fontSize: 14,
+      color: theme.colors.text.secondary,
+      marginTop: 8,
+      textAlign: 'center',
+    },
   });
 
   return (
@@ -1374,7 +1428,14 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                 {/* Header */}
                 <View style={styles.header}>
                   <Text style={styles.headerTitle}>🔄 Transfer Product</Text>
-                  <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={() => {
+                      resetForm();
+                      onClose();
+                    }}
+                    disabled={loading}
+                  >
                     <X size={24} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
@@ -1397,18 +1458,25 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                 {/* Footer */}
                 <View style={styles.footer}>
                   {currentStep > 0 ? (
-                    <TouchableOpacity 
-                      style={[styles.button, styles.backButton]} 
+                    <TouchableOpacity
+                      style={[styles.button, styles.backButton]}
                       onPress={handlePrevStep}
+                      disabled={loading}
+                      activeOpacity={loading ? 1 : 0.7}
                     >
-                      <Text style={styles.backButtonText}>← Back</Text>
+                      <Text style={[styles.backButtonText, loading && { opacity: 0.5 }]}>← Back</Text>
                     </TouchableOpacity>
                   ) : (
-                    <TouchableOpacity 
-                      style={[styles.button, styles.backButton]} 
-                      onPress={onClose}
+                    <TouchableOpacity
+                      style={[styles.button, styles.backButton]}
+                      onPress={() => {
+                        resetForm();
+                        onClose();
+                      }}
+                      disabled={loading}
+                      activeOpacity={loading ? 1 : 0.7}
                     >
-                      <Text style={styles.backButtonText}>Cancel</Text>
+                      <Text style={[styles.backButtonText, loading && { opacity: 0.5 }]}>Cancel</Text>
                     </TouchableOpacity>
                   )}
                   
@@ -1416,9 +1484,10 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                     <TouchableOpacity
                       style={[styles.button, styles.nextButton]}
                       onPress={handleNextStep}
-                      activeOpacity={0.8}
+                      disabled={loading}
+                      activeOpacity={loading ? 1 : 0.8}
                     >
-                      <Text style={styles.nextButtonText}>Next →</Text>
+                      <Text style={[styles.nextButtonText, loading && { opacity: 0.5 }]}>Next →</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -1434,6 +1503,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                       <View style={styles.submitButtonContent}>
                         {loading ? (
                           <>
+                            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
                             <Text style={styles.submitButtonText}>Creating Transfer...</Text>
                           </>
                         ) : (
@@ -1449,9 +1519,20 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
         </Animated.View>
       </TouchableWithoutFeedback>
 
+      {/* Loading Overlay */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>Creating Transfer...</Text>
+            <Text style={styles.loadingSubtext}>Please wait while we process your request</Text>
+          </View>
+        </View>
+      )}
+
       {/* Lot Selection Modal */}
       <LotSelectionModal
-        visible={showLotSelection}
+        visible={showLotSelection && !loading}
         onClose={() => setShowLotSelection(false)}
         onSelectLot={handleLotSelection}
         productId={parseInt(product?.id || '0')}
