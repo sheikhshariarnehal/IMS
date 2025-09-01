@@ -40,6 +40,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import SharedLayout from '@/components/SharedLayout';
 import CustomerAddForm from '@/components/forms/CustomerAddForm';
 import { FormService } from '@/lib/services/formService';
@@ -191,6 +192,7 @@ const mockPurchaseHistory: PurchaseHistory[] = [
 export default function CustomersPage() {
   const { theme } = useTheme();
   const { user, hasPermission } = useAuth();
+  const { showToast } = useToast();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'customers' | 'purchase-history' | 'red-list' | 'top-customers'>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -261,7 +263,7 @@ export default function CustomersPage() {
 
     } catch (error) {
       console.error('Failed to load customers:', error);
-      Alert.alert('Error', 'Failed to load customers');
+      showToast('Failed to load customers. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -386,8 +388,22 @@ export default function CustomersPage() {
   const handleCustomerSubmit = async (data: any) => {
     console.log('Customer form submitted:', data);
     setShowCustomerForm(false);
-    // Reload customers to show the new one
-    await loadCustomers();
+
+    // Show loading state while refreshing
+    setRefreshing(true);
+
+    try {
+      // Reload customers to show the new one
+      await loadCustomers();
+
+      // Show success message
+      showToast('Customer list updated successfully', 'success');
+    } catch (error) {
+      console.error('Error refreshing customers:', error);
+      showToast('Failed to refresh customer list', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const renderKPICards = () => (

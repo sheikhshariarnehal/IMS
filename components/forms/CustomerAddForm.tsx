@@ -673,11 +673,13 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
           profile_picture: result.data.profile_picture || ''
         };
 
-        // Close form after showing success animation
+        // Call onSubmit immediately to refresh the customer list
+        onSubmit(transformedData);
+
+        // Close form after brief success animation
         setTimeout(() => {
-          onSubmit(transformedData);
           handleClose();
-        }, 2000);
+        }, 800);
       } else {
         showToast(result.error || 'Failed to save customer', 'error');
       }
@@ -699,8 +701,10 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
   };
 
   const handleClose = () => {
+    // Reset all states
     setShowSuccess(false);
     setCurrentStep(0);
+    setIsSubmitting(false);
     setFormData({
       name: '',
       email: '',
@@ -716,6 +720,11 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
       profile_picture: '',
     });
     setErrors({});
+
+    // Reset animations
+    successScale.setValue(0);
+
+    // Close the modal
     onClose();
   };
 
@@ -1011,12 +1020,12 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
                       <CheckCircle size={64} color="#10B981" />
                     </View>
                     <Text style={styles.successTitle}>
-                      {existingCustomer ? 'Customer Updated!' : 'Customer Created!'}
+                      {existingCustomer ? 'Customer Updated!' : 'Customer Created Successfully!'}
                     </Text>
                     <Text style={styles.successMessage}>
                       {existingCustomer
-                        ? 'Customer information has been updated successfully'
-                        : 'New customer has been added to the system'
+                        ? 'Customer information has been updated and saved to the database'
+                        : 'New customer has been added to your customer database and is now available for transactions'
                       }
                     </Text>
                   </Animated.View>
