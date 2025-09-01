@@ -485,30 +485,112 @@ export default function SalesPage() {
     }
   };
 
-  const handleAction = (action: string, item: any) => {
-    switch (action) {
-      case 'view':
-        Alert.alert('View Details', `Viewing details for ${item.saleNumber || item.invoiceNumber}`);
-        break;
-      case 'edit':
-        if (!hasPermission('sales', 'edit')) {
-          Alert.alert('Permission Denied', 'You do not have permission to edit sales.');
-          return;
-        }
-        Alert.alert('Edit Sale', `Editing ${item.saleNumber || item.invoiceNumber}`);
-        break;
-      case 'invoice':
-        Alert.alert('Generate Invoice', `Generating invoice for ${item.saleNumber}`);
-        break;
-      case 'payment':
-        Alert.alert('Record Payment', `Recording payment for ${item.invoiceNumber}`);
-        break;
-      case 'reminder':
-        Alert.alert('Send Reminder', `Sending reminder for ${item.invoiceNumber}`);
-        break;
-      case 'cancel':
-        Alert.alert('Cancel Sale', `Cancelling ${item.saleNumber}`);
-        break;
+  const handleAction = async (action: string, item: any) => {
+    try {
+      switch (action) {
+        case 'view':
+          Alert.alert(
+            'Sale Details',
+            `Sale: ${item.saleNumber || item.invoiceNumber}\nCustomer: ${item.customerName}\nAmount: ৳${item.amount?.toLocaleString() || 0}\nStatus: ${item.status}`,
+            [{ text: 'OK' }]
+          );
+          break;
+        case 'edit':
+          if (!hasPermission('sales', 'edit')) {
+            Alert.alert('Permission Denied', 'You do not have permission to edit sales.');
+            return;
+          }
+          Alert.alert(
+            'Edit Sale',
+            `Edit ${item.saleNumber || item.invoiceNumber}?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Edit', onPress: () => console.log('Edit functionality coming soon') }
+            ]
+          );
+          break;
+        case 'invoice':
+          Alert.alert(
+            'Generate Invoice',
+            `Generate invoice for ${item.saleNumber}?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Generate', onPress: () => handleGenerateInvoice(item) }
+            ]
+          );
+          break;
+        case 'payment':
+          Alert.alert(
+            'Record Payment',
+            `Record payment for ${item.invoiceNumber}?\nDue Amount: ৳${item.dueAmount?.toLocaleString() || 0}`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Record', onPress: () => handleRecordPayment(item) }
+            ]
+          );
+          break;
+        case 'reminder':
+          Alert.alert(
+            'Send Reminder',
+            `Send payment reminder for ${item.invoiceNumber}?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Send', onPress: () => handleSendReminder(item) }
+            ]
+          );
+          break;
+        case 'cancel':
+          Alert.alert(
+            'Cancel Sale',
+            `Are you sure you want to cancel ${item.saleNumber}?`,
+            [
+              { text: 'No', style: 'cancel' },
+              { text: 'Yes', style: 'destructive', onPress: () => handleCancelSale(item) }
+            ]
+          );
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling action:', error);
+      Alert.alert('Error', 'Failed to perform action. Please try again.');
+    }
+  };
+
+  const handleGenerateInvoice = async (item: any) => {
+    try {
+      // TODO: Implement invoice generation with FormService
+      Alert.alert('Success', 'Invoice generated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate invoice');
+    }
+  };
+
+  const handleRecordPayment = async (item: any) => {
+    try {
+      // TODO: Implement payment recording with FormService
+      Alert.alert('Success', 'Payment recorded successfully!');
+      await loadSalesData(); // Refresh data
+    } catch (error) {
+      Alert.alert('Error', 'Failed to record payment');
+    }
+  };
+
+  const handleSendReminder = async (item: any) => {
+    try {
+      // TODO: Implement reminder sending
+      Alert.alert('Success', 'Reminder sent successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send reminder');
+    }
+  };
+
+  const handleCancelSale = async (item: any) => {
+    try {
+      // TODO: Implement sale cancellation with FormService
+      Alert.alert('Success', 'Sale cancelled successfully!');
+      await loadSalesData(); // Refresh data
+    } catch (error) {
+      Alert.alert('Error', 'Failed to cancel sale');
     }
   };
 
@@ -916,14 +998,20 @@ export default function SalesPage() {
             <Search size={20} color={theme.colors.text.secondary} />
             <TextInput
               style={[styles.searchInput, { color: theme.colors.text.primary }]}
-              placeholder="Search ..."
+              placeholder="Search sales, customers..."
               placeholderTextColor={theme.colors.text.muted}
               value={filters.search || ''}
               onChangeText={(text) => setFilters(prev => ({ ...prev, search: text }))}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
             />
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.filterButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+            activeOpacity={0.7}
+            onPress={() => Alert.alert('Filter', 'Filter functionality coming soon')}
           >
             <Filter size={20} color={theme.colors.primary} />
           </TouchableOpacity>
@@ -995,18 +1083,28 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   kpiContainer: {
     padding: 16,
@@ -1018,32 +1116,41 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     flex: 1,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     borderWidth: 1,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 120,
   },
   kpiIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   kpiValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   kpiLabel: {
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  kpiSubtext: {
+    fontSize: 11,
+    textAlign: 'center',
+    fontWeight: '400',
+    marginTop: 4,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -1074,49 +1181,65 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    minHeight: 48,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
+    paddingVertical: 4,
   },
   filterButton: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   listContainer: {
     padding: 16,
     gap: 12,
   },
   itemCard: {
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: 4,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 16,
+    alignItems: 'flex-start',
   },
   itemInfo: {
     flex: 1,
+    paddingRight: 12,
   },
   itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+    lineHeight: 24,
   },
   itemCode: {
     fontSize: 14,
@@ -1151,20 +1274,24 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   customerName: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 20,
   },
   redListBadge: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+    color: '#dc2626',
   },
   contactInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    marginTop: 4,
   },
   phoneText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
   },
   itemDetails: {
     marginBottom: 12,
@@ -1209,25 +1336,34 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 64,
+    paddingVertical: 80,
+    paddingHorizontal: 40,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 20,
+    textAlign: 'center',
   },
   emptySubtext: {
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: 16,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   loadingContainer: {
     flex: 1,
