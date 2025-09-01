@@ -422,11 +422,13 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
     // Load lots for the selected product
     try {
+      console.log('🔍 SalesForm: Loading lots for product:', product.name, 'ID:', product.id);
       const productLots = await FormService.getProductLots(product.id);
+      console.log('🔍 SalesForm: Received lots:', productLots);
       setLots(productLots);
-      console.log(`Loaded ${productLots.length} lots for product ${product.name}`);
+      console.log(`✅ SalesForm: Loaded ${productLots.length} lots for product ${product.name}`);
     } catch (error) {
-      console.error('Error loading product lots:', error);
+      console.error('❌ SalesForm: Error loading product lots:', error);
       setLots([]);
     }
   }, []);

@@ -5,7 +5,7 @@ import type {
 } from '../supabase';
 
 // Check if we're in demo mode
-const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true' || true; // Force demo mode for now
+const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 
 // Form data interfaces
 export interface ProductFormData {
@@ -135,7 +135,7 @@ export class FormService {
     }
 
     try {
-      const contextUserId = userId || 1;
+      const contextUserId = userId || 11; // Use a valid active user ID
       console.log('🔄 Setting user context via RPC for userId:', contextUserId);
 
       // First try to set the user context
@@ -465,35 +465,186 @@ export class FormService {
 
   static async getProductLots(productId: number): Promise<any[]> {
     try {
+      console.log('🔍 getProductLots called for productId:', productId, 'type:', typeof productId);
+      console.log('🔍 isDemoMode:', isDemoMode);
+
+      // Ensure productId is a number
+      const numericProductId = typeof productId === 'string' ? parseInt(productId) : productId;
+      console.log('🔍 numericProductId:', numericProductId);
+
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock product lots data for product:', numericProductId);
+        const mockLots = [
+          {
+            id: 1,
+            product_id: numericProductId,
+            lot_number: 'LOT001',
+            quantity: 50,
+            purchase_price: 25.00,
+            selling_price: 35.00,
+            purchase_date: new Date('2024-01-15').toISOString(),
+            expiry_date: null,
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 2,
+            product_id: numericProductId,
+            lot_number: 'LOT002',
+            quantity: 30,
+            purchase_price: 27.00,
+            selling_price: 37.00,
+            purchase_date: new Date('2024-02-01').toISOString(),
+            expiry_date: null,
+            created_at: new Date('2024-02-01').toISOString(),
+            updated_at: new Date('2024-02-01').toISOString()
+          }
+        ];
+        return mockLots;
+      }
+
+      console.log('🔄 Setting user context for product lots query...');
       await this.ensureUserContext();
 
+      console.log('🔄 Querying products_lot table for numericProductId:', numericProductId);
       const { data, error } = await supabase
         .from('products_lot')
         .select('*')
-        .eq('product_id', productId)
-        .gt('quantity', 0) // Only get lots with available quantity
+        .eq('product_id', numericProductId)
         .order('lot_number', { ascending: true }); // FIFO order
 
       if (error) {
-        console.error('Error fetching product lots:', error);
+        console.error('❌ Error fetching product lots:', error);
+        console.error('❌ Full error details:', JSON.stringify(error, null, 2));
         return [];
       }
-      return data || [];
+
+      console.log('✅ Product lots query successful. Found', data?.length || 0, 'total lots');
+      console.log('✅ Raw lots data:', data);
+
+      // Filter lots with quantity > 0 (handle string quantities)
+      const availableLots = (data || []).filter(lot => {
+        const quantity = parseFloat(lot.quantity) || 0;
+        return quantity > 0;
+      });
+
+      console.log('✅ Available lots after filtering:', availableLots.length, 'lots');
+      console.log('✅ Available lots data:', availableLots);
+      return availableLots;
     } catch (error) {
-      console.error('Error fetching product lots:', error);
+      console.error('❌ Exception in getProductLots:', error);
       return [];
     }
   }
 
   static async getExistingProducts(): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock existing products data');
+        return [
+          {
+            id: 1,
+            name: 'Premium Cotton Fabric',
+            product_code: 'CTN-001',
+            category: 'Cotton',
+            current_stock: 150,
+            selling_price: 35.00,
+            unit_of_measure: 'meters',
+            unit_of_measurement: 'meters',
+            category_id: 1,
+            supplier_id: 1,
+            location_id: 1,
+            minimum_threshold: 50,
+            product_status: 'active'
+          },
+          {
+            id: 2,
+            name: 'Silk Blend Fabric',
+            product_code: 'SLK-002',
+            category: 'Silk',
+            current_stock: 75,
+            selling_price: 65.00,
+            unit_of_measure: 'meters',
+            unit_of_measurement: 'meters',
+            category_id: 2,
+            supplier_id: 2,
+            location_id: 1,
+            minimum_threshold: 30,
+            product_status: 'active'
+          },
+          {
+            id: 3,
+            name: 'Denim Fabric',
+            product_code: 'DNM-003',
+            category: 'Denim',
+            current_stock: 25,
+            selling_price: 30.00,
+            unit_of_measure: 'meters',
+            unit_of_measurement: 'meters',
+            category_id: 3,
+            supplier_id: 1,
+            location_id: 2,
+            minimum_threshold: 40,
+            product_status: 'active'
+          },
+          {
+            id: 4,
+            name: 'Polyester Blend',
+            product_code: 'PLY-004',
+            category: 'Synthetic',
+            current_stock: 200,
+            selling_price: 22.00,
+            unit_of_measure: 'meters',
+            unit_of_measurement: 'meters',
+            category_id: 4,
+            supplier_id: 3,
+            location_id: 1,
+            minimum_threshold: 60,
+            product_status: 'active'
+          },
+          {
+            id: 5,
+            name: 'Linen Fabric',
+            product_code: 'LIN-005',
+            category: 'Linen',
+            current_stock: 5,
+            selling_price: 42.00,
+            unit_of_measure: 'meters',
+            unit_of_measurement: 'meters',
+            category_id: 5,
+            supplier_id: 2,
+            location_id: 1,
+            minimum_threshold: 25,
+            product_status: 'slow'
+          }
+        ];
+      }
+
       await this.ensureUserContext();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, product_code')
+        .select(`
+          id,
+          name,
+          product_code,
+          current_stock,
+          selling_price,
+          unit_of_measurement,
+          categories(name),
+          suppliers(name)
+        `)
         .order('name');
       if (error) throw error;
-      return data || [];
+
+      // Transform the data to match the expected format
+      return (data || []).map((product: any) => ({
+        ...product,
+        category: product.categories?.name || 'Uncategorized',
+        supplier: product.suppliers?.name || 'Unknown',
+        unit_of_measure: product.unit_of_measurement
+      }));
     } catch (error) {
       console.error('Error fetching existing products:', error);
       return [];
@@ -701,10 +852,86 @@ export class FormService {
 
   static async getCustomers(filters?: any): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock customers data');
+        const mockCustomers = [
+          {
+            id: 1,
+            name: 'ABC Textiles Ltd',
+            email: 'contact@abctextiles.com',
+            phone: '+8801712345678',
+            address: '123 Textile Street, Dhaka',
+            company_name: 'ABC Textiles Ltd',
+            delivery_address: '123 Textile Street, Dhaka',
+            customer_type: 'wholesale',
+            fixed_coupon: 'WHOLESALE10',
+            red_list_status: false,
+            total_due: 0,
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 2,
+            name: 'Fashion House BD',
+            email: 'orders@fashionhouse.com',
+            phone: '+8801812345678',
+            address: '456 Fashion Avenue, Chittagong',
+            company_name: 'Fashion House BD',
+            delivery_address: '456 Fashion Avenue, Chittagong',
+            customer_type: 'regular',
+            fixed_coupon: null,
+            red_list_status: false,
+            total_due: 0,
+            created_at: new Date('2024-02-01').toISOString(),
+            updated_at: new Date('2024-02-01').toISOString()
+          },
+          {
+            id: 3,
+            name: 'Premium Garments',
+            email: 'info@premiumgarments.com',
+            phone: '+8801912345678',
+            address: '789 Garment District, Sylhet',
+            company_name: 'Premium Garments',
+            delivery_address: '789 Garment District, Sylhet',
+            customer_type: 'vip',
+            fixed_coupon: 'VIP15',
+            red_list_status: false,
+            total_due: 0,
+            created_at: new Date('2024-02-10').toISOString(),
+            updated_at: new Date('2024-02-10').toISOString()
+          }
+        ];
+
+        // Apply filters if provided
+        let filteredCustomers = mockCustomers;
+
+        if (filters?.customer_type) {
+          filteredCustomers = filteredCustomers.filter(customer =>
+            customer.customer_type === filters.customer_type
+          );
+        }
+        if (filters?.red_list_status !== undefined) {
+          filteredCustomers = filteredCustomers.filter(customer =>
+            customer.red_list_status === filters.red_list_status
+          );
+        }
+        if (filters?.search) {
+          const searchTerm = filters.search.toLowerCase();
+          filteredCustomers = filteredCustomers.filter(customer =>
+            customer.name.toLowerCase().includes(searchTerm) ||
+            customer.email.toLowerCase().includes(searchTerm) ||
+            customer.phone.toLowerCase().includes(searchTerm)
+          );
+        }
+
+        return filteredCustomers;
+      }
+
       await this.ensureUserContext();
 
       let query = supabase.from('customers').select('*');
-      
+
       if (filters?.customer_type) {
         query = query.eq('customer_type', filters.customer_type);
       }
@@ -823,6 +1050,58 @@ export class FormService {
 
   static async getSuppliers(): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock suppliers data');
+        return [
+          {
+            id: 1,
+            name: 'Textile Suppliers Inc.',
+            contact_person: 'John Smith',
+            phone: '+8801712345678',
+            email: 'contact@textilesuppliers.com',
+            address: '123 Supplier Street, Dhaka',
+            city: 'Dhaka',
+            state: 'Dhaka Division',
+            country: 'Bangladesh',
+            postal_code: '1000',
+            payment_terms: 30,
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 2,
+            name: 'Premium Textiles Ltd.',
+            contact_person: 'Sarah Johnson',
+            phone: '+8801812345678',
+            email: 'info@premiumtextiles.com',
+            address: '456 Premium Avenue, Chittagong',
+            city: 'Chittagong',
+            state: 'Chittagong Division',
+            country: 'Bangladesh',
+            postal_code: '4000',
+            payment_terms: 45,
+            created_at: new Date('2024-02-01').toISOString(),
+            updated_at: new Date('2024-02-01').toISOString()
+          },
+          {
+            id: 3,
+            name: 'Synthetic Materials Co.',
+            contact_person: 'Mike Wilson',
+            phone: '+8801912345678',
+            email: 'orders@syntheticmaterials.com',
+            address: '789 Industrial Zone, Sylhet',
+            city: 'Sylhet',
+            state: 'Sylhet Division',
+            country: 'Bangladesh',
+            postal_code: '3100',
+            payment_terms: 60,
+            created_at: new Date('2024-02-10').toISOString(),
+            updated_at: new Date('2024-02-10').toISOString()
+          }
+        ];
+      }
+
       await this.ensureUserContext();
       const { data, error } = await supabase.from('suppliers').select('*').order('name');
       if (error) throw error;
@@ -836,6 +1115,48 @@ export class FormService {
   // Category Operations
   static async getCategories(): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock categories data');
+        return [
+          {
+            id: 1,
+            name: 'Cotton',
+            description: 'Natural cotton fabrics',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 2,
+            name: 'Silk',
+            description: 'Premium silk fabrics',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 3,
+            name: 'Denim',
+            description: 'Durable denim fabrics',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 4,
+            name: 'Synthetic',
+            description: 'Synthetic blend fabrics',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 5,
+            name: 'Linen',
+            description: 'Natural linen fabrics',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          }
+        ];
+      }
+
       await this.ensureUserContext();
       const { data, error } = await supabase.from('categories').select('*').order('name');
       if (error) throw error;
@@ -874,6 +1195,49 @@ export class FormService {
   // Location Operations
   static async getLocations(): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock locations data');
+        return [
+          {
+            id: 1,
+            name: 'Main Warehouse',
+            address: '123 Main Street, Dhaka',
+            capacity: 10000,
+            current_utilization: 7500,
+            manager: 'Warehouse Manager',
+            status: 'active',
+            type: 'warehouse',
+            created_at: new Date('2024-01-15').toISOString(),
+            updated_at: new Date('2024-01-15').toISOString()
+          },
+          {
+            id: 2,
+            name: 'Secondary Warehouse',
+            address: '456 Industrial Area, Chittagong',
+            capacity: 5000,
+            current_utilization: 2500,
+            manager: 'Assistant Manager',
+            status: 'active',
+            type: 'warehouse',
+            created_at: new Date('2024-02-01').toISOString(),
+            updated_at: new Date('2024-02-01').toISOString()
+          },
+          {
+            id: 3,
+            name: 'Retail Store',
+            address: '789 Shopping District, Sylhet',
+            capacity: 1000,
+            current_utilization: 800,
+            manager: 'Store Manager',
+            status: 'active',
+            type: 'retail',
+            created_at: new Date('2024-02-10').toISOString(),
+            updated_at: new Date('2024-02-10').toISOString()
+          }
+        ];
+      }
+
       await this.ensureUserContext();
       const { data, error } = await supabase.from('locations').select('*').order('name');
       if (error) throw error;
