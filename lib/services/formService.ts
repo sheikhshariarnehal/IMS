@@ -255,6 +255,12 @@ export class FormService {
 
   static async getProducts(filters?: any): Promise<any[]> {
     try {
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock products data');
+        return this.getMockProducts(filters);
+      }
+
       await this.ensureUserContext();
 
       let query = supabase
@@ -265,7 +271,7 @@ export class FormService {
           suppliers(name),
           locations(name)
         `);
-      
+
       if (filters?.search) {
         query = query.or(`name.ilike.%${filters.search}%,product_code.ilike.%${filters.search}%`);
       }
@@ -294,6 +300,167 @@ export class FormService {
       console.error('Error fetching products:', error);
       return [];
     }
+  }
+
+  // Mock products data for demo mode
+  private static getMockProducts(filters?: any): any[] {
+    const mockProducts = [
+      {
+        id: 1,
+        name: 'Premium Cotton Fabric',
+        product_code: 'CTN-001',
+        category_id: 1,
+        category_name: 'Cotton',
+        description: 'High-quality cotton fabric for premium garments',
+        purchase_price: 25.00,
+        selling_price: 35.00,
+        per_meter_price: 35.00,
+        supplier_id: 1,
+        supplier_name: 'Textile Suppliers Inc.',
+        location_id: 1,
+        location_name: 'Main Warehouse',
+        minimum_threshold: 50,
+        current_stock: 150,
+        total_purchased: 500,
+        total_sold: 350,
+        wastage_status: false,
+        product_status: 'active',
+        unit_of_measurement: 'meters',
+        image_url: null,
+        created_at: new Date('2024-01-15').toISOString(),
+        updated_at: new Date('2024-01-15').toISOString(),
+        created_by: 1
+      },
+      {
+        id: 2,
+        name: 'Silk Blend Fabric',
+        product_code: 'SLK-002',
+        category_id: 2,
+        category_name: 'Silk',
+        description: 'Luxurious silk blend fabric',
+        purchase_price: 45.00,
+        selling_price: 65.00,
+        per_meter_price: 65.00,
+        supplier_id: 2,
+        supplier_name: 'Premium Textiles Ltd.',
+        location_id: 1,
+        location_name: 'Main Warehouse',
+        minimum_threshold: 30,
+        current_stock: 75,
+        total_purchased: 200,
+        total_sold: 125,
+        wastage_status: false,
+        product_status: 'active',
+        unit_of_measurement: 'meters',
+        image_url: null,
+        created_at: new Date('2024-01-20').toISOString(),
+        updated_at: new Date('2024-01-20').toISOString(),
+        created_by: 1
+      },
+      {
+        id: 3,
+        name: 'Denim Fabric',
+        product_code: 'DNM-003',
+        category_id: 3,
+        category_name: 'Denim',
+        description: 'Durable denim fabric for casual wear',
+        purchase_price: 20.00,
+        selling_price: 30.00,
+        per_meter_price: 30.00,
+        supplier_id: 1,
+        supplier_name: 'Textile Suppliers Inc.',
+        location_id: 2,
+        location_name: 'Secondary Warehouse',
+        minimum_threshold: 40,
+        current_stock: 25,
+        total_purchased: 300,
+        total_sold: 275,
+        wastage_status: false,
+        product_status: 'active',
+        unit_of_measurement: 'meters',
+        image_url: null,
+        created_at: new Date('2024-01-25').toISOString(),
+        updated_at: new Date('2024-01-25').toISOString(),
+        created_by: 1
+      },
+      {
+        id: 4,
+        name: 'Polyester Blend',
+        product_code: 'PLY-004',
+        category_id: 4,
+        category_name: 'Synthetic',
+        description: 'Versatile polyester blend fabric',
+        purchase_price: 15.00,
+        selling_price: 22.00,
+        per_meter_price: 22.00,
+        supplier_id: 3,
+        supplier_name: 'Synthetic Materials Co.',
+        location_id: 1,
+        location_name: 'Main Warehouse',
+        minimum_threshold: 60,
+        current_stock: 200,
+        total_purchased: 800,
+        total_sold: 600,
+        wastage_status: false,
+        product_status: 'active',
+        unit_of_measurement: 'meters',
+        image_url: null,
+        created_at: new Date('2024-02-01').toISOString(),
+        updated_at: new Date('2024-02-01').toISOString(),
+        created_by: 1
+      },
+      {
+        id: 5,
+        name: 'Linen Fabric',
+        product_code: 'LIN-005',
+        category_id: 5,
+        category_name: 'Linen',
+        description: 'Natural linen fabric for summer wear',
+        purchase_price: 30.00,
+        selling_price: 42.00,
+        per_meter_price: 42.00,
+        supplier_id: 2,
+        supplier_name: 'Premium Textiles Ltd.',
+        location_id: 1,
+        location_name: 'Main Warehouse',
+        minimum_threshold: 25,
+        current_stock: 5,
+        total_purchased: 150,
+        total_sold: 145,
+        wastage_status: false,
+        product_status: 'slow',
+        unit_of_measurement: 'meters',
+        image_url: null,
+        created_at: new Date('2024-02-05').toISOString(),
+        updated_at: new Date('2024-02-05').toISOString(),
+        created_by: 1
+      }
+    ];
+
+    // Apply filters if provided
+    let filteredProducts = mockProducts;
+
+    if (filters?.search) {
+      const searchTerm = filters.search.toLowerCase();
+      filteredProducts = filteredProducts.filter(product =>
+        product.name.toLowerCase().includes(searchTerm) ||
+        product.product_code.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    if (filters?.category) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.category_id === parseInt(filters.category)
+      );
+    }
+
+    if (filters?.location) {
+      filteredProducts = filteredProducts.filter(product =>
+        product.location_id === parseInt(filters.location)
+      );
+    }
+
+    return filteredProducts;
   }
 
   static async getProductLots(productId: number): Promise<any[]> {
