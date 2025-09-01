@@ -248,9 +248,33 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownLayout, setDropdownLayout] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const dropdownRef = useRef<View>(null);
 
-  const selectedOption = options.find((option: any) => option.id === value || option.id.toString() === value);
+  const selectedOption = options.find((option: any) => {
+    // Handle different value types and ensure proper matching
+    const optionId = option.id?.toString();
+    const searchValue = value?.toString();
+
+    return optionId === searchValue ||
+           option.id === value ||
+           option.id === parseInt(value) ||
+           optionId === value ||
+           option.id.toString() === value.toString();
+  });
+
+  // Debug logging for category dropdown
+  React.useEffect(() => {
+    if (displayKey === 'name' && options.length > 0 && options[0].name) {
+      console.log('Dropdown Debug:', {
+        displayKey,
+        value,
+        selectedOption: selectedOption?.name || 'None',
+        optionsCount: options.length,
+        firstOption: options[0]
+      });
+    }
+  }, [value, selectedOption, options, displayKey]);
 
   // Filter options based on search query
   const filteredOptions = searchable && searchQuery
@@ -264,13 +288,15 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
   const handleDropdownToggle = () => {
     if (!isOpen && dropdownRef.current) {
       // Measure the dropdown position to determine if it should open upward or downward
-      dropdownRef.current.measure((_x, _y, _width, height, _pageX, pageY) => {
-        const screenHeight = Dimensions.get('window').height;
-        const dropdownHeight = Math.min(filteredOptions.length * 60, 200); // Estimate dropdown height
-        const spaceBelow = screenHeight - pageY - height - 100; // 100px buffer for footer
-        const spaceAbove = pageY - 100; // 100px buffer for header
+      dropdownRef.current.measure((_x, _y, width, height, pageX, pageY) => {
+        const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
+        const maxDropdownHeight = Math.min(filteredOptions.length * 60, screenHeight * 0.4); // Max 40% of screen height
+        const spaceBelow = screenHeight - pageY - height - 120; // Buffer for keyboard/footer
+        const spaceAbove = pageY - 120; // Buffer for header
 
-        if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
+        setDropdownLayout({ x: pageX, y: pageY, width, height });
+
+        if (spaceBelow < maxDropdownHeight && spaceAbove > maxDropdownHeight) {
           setDropdownPosition('top');
         } else {
           setDropdownPosition('bottom');
@@ -284,17 +310,18 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
   };
 
   return (
-    <View style={[styles.dropdownContainer, isOpen && styles.dropdownContainerOpen]} ref={dropdownRef}>
-      <TouchableOpacity
-        style={[
-          styles.dropdownButton,
-          {
-            borderColor: error ? theme.colors.status.error : theme.colors.border,
-            backgroundColor: theme.colors.backgroundTertiary
-          }
-        ]}
-        onPress={handleDropdownToggle}
-      >
+    <>
+      <View style={[styles.dropdownContainer, isOpen && styles.dropdownContainerOpen]} ref={dropdownRef}>
+        <TouchableOpacity
+          style={[
+            styles.dropdownButton,
+            {
+              borderColor: error ? theme.colors.status.error : theme.colors.border,
+              backgroundColor: theme.colors.backgroundTertiary
+            }
+          ]}
+          onPress={handleDropdownToggle}
+        >
         <View style={styles.dropdownContent}>
           <Text style={[
             styles.dropdownButtonText,
@@ -315,12 +342,28 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
         />
       </TouchableOpacity>
 
-      {isOpen && (
-        <View style={[
-          styles.dropdownList,
-          dropdownPosition === 'top' ? styles.dropdownListTop : styles.dropdownListBottom,
-          { backgroundColor: theme.colors.background }
-        ]}>
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsOpen(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsOpen(false)}>
+          <View style={styles.dropdownModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[
+                styles.dropdownList,
+                {
+                  position: 'absolute',
+                  left: dropdownLayout.x,
+                  top: dropdownPosition === 'top'
+                    ? dropdownLayout.y - Math.min(filteredOptions.length * 60, Dimensions.get('window').height * 0.4)
+                    : dropdownLayout.y + dropdownLayout.height + 4,
+                  width: dropdownLayout.width,
+                  backgroundColor: theme.colors.background,
+                  maxHeight: Dimensions.get('window').height * 0.4,
+                }
+              ]}>
           {searchable && (
             <View style={[styles.searchContainer, { borderBottomColor: theme.colors.border }]}>
               <TextInput
@@ -338,7 +381,7 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
             </View>
           )}
           <ScrollView
-            style={{ maxHeight: searchable ? 160 : 200 }}
+            style={{ maxHeight: Dimensions.get('window').height * 0.3 }}
             nestedScrollEnabled
             showsVerticalScrollIndicator={true}
             keyboardShouldPersistTaps="handled"
@@ -355,16 +398,22 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
                   key={item.id}
                   style={[
                     styles.dropdownItem,
-                    { borderBottomColor: theme.colors.border }
+                    { borderBottomColor: theme.colors.border },
+                    value === item.id.toString() && { backgroundColor: theme.colors.backgroundSecondary }
                   ]}
                   onPress={() => {
                     onChange(item.id.toString());
                     setIsOpen(false);
                     setSearchQuery('');
                   }}
+                  activeOpacity={0.7}
                 >
-                  <View>
-                    <Text style={[styles.dropdownItemText, { color: theme.colors.text.primary }]}>
+                  <View style={styles.dropdownItemContent}>
+                    <Text style={[
+                      styles.dropdownItemText,
+                      { color: theme.colors.text.primary },
+                      value === item.id.toString() && { fontWeight: '600' }
+                    ]}>
                       {item[displayKey]}
                     </Text>
                     {item.product_code && (
@@ -373,13 +422,26 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
                       </Text>
                     )}
                     {item.description && (
-                      <Text style={[styles.dropdownItemDescription, { color: theme.colors.text.muted }]}>
+                      <Text
+                        style={[styles.dropdownItemDescription, { color: theme.colors.text.muted }]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
                         {item.description}
                       </Text>
                     )}
                     {item.contact && (
-                      <Text style={[styles.dropdownItemDescription, { color: theme.colors.text.muted }]}>
+                      <Text
+                        style={[styles.dropdownItemDescription, { color: theme.colors.text.muted }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
                         {item.contact}
+                      </Text>
+                    )}
+                    {item.current_stock !== undefined && (
+                      <Text style={[styles.dropdownItemStock, { color: theme.colors.status.success }]}>
+                        Stock: {parseFloat(item.current_stock || '0').toFixed(2)}
                       </Text>
                     )}
                   </View>
@@ -387,9 +449,13 @@ const DropdownField: React.FC<DropdownFieldProps> = ({ value, onChange, options,
               ))
             )}
           </ScrollView>
-        </View>
-      )}
-    </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+      </View>
+    </>
   );
 };
 
@@ -668,24 +734,47 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
       supplier_id: product.supplier_id?.toString() || '',
       location_id: product.location_id?.toString() || '',
       lot_number: nextLotNumber,
-      // Reset pricing fields for new stock entry
-      purchase_price: '',
-      selling_price: '',
-      quantity: '0',
+      // Keep existing pricing as defaults for new stock entry
+      purchase_price: product.purchase_price?.toString() || '',
+      selling_price: product.selling_price?.toString() || '',
+      per_meter_price: product.per_meter_price?.toString() || '',
       unit_of_measurement: product.unit_of_measurement || 'meter',
       per_unit_price: '',
       // Reset stock to 0 for new lot entry
       current_stock: '0',
+      // Keep existing product settings
+      minimum_threshold: product.minimum_threshold?.toString() || '100',
+      product_status: product.product_status || 'active',
+      wastage_status: product.wastage_status || false,
     }));
   };
 
-  // Reset lot number when product type changes
+  // Reset form when product type changes
   React.useEffect(() => {
     if (productType === 'new') {
-      setFormData(prev => ({ ...prev, lot_number: '0' }));
+      setFormData(prev => ({
+        ...prev,
+        lot_number: '0',
+        // Reset to default values for new product
+        name: '',
+        product_code: '',
+        category_id: categories.length > 0 ? categories[0].id.toString() : '',
+        description: '',
+        purchase_price: '',
+        selling_price: '',
+        per_meter_price: '',
+        supplier_id: suppliers.length > 0 ? suppliers[0].id.toString() : '',
+        location_id: locations.length > 0 ? locations[0].id.toString() : '',
+        current_stock: '0',
+        unit_of_measurement: 'meter',
+        per_unit_price: '',
+        minimum_threshold: '100',
+        product_status: 'active',
+        wastage_status: false,
+      }));
       setSelectedExistingProduct(null);
     }
-  }, [productType]);
+  }, [productType, categories, suppliers, locations]);
 
   // Animations
   React.useEffect(() => {
@@ -726,6 +815,23 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
           suppliers: suppliersData.length,
           locations: locationsData.length,
           existingProducts: existingProductsData.length
+        });
+
+        // Set default values for dropdowns if not already set
+        if (productType === 'new') {
+          setFormData(prev => ({
+            ...prev,
+            category_id: prev.category_id || (categoriesData.length > 0 ? categoriesData[0].id.toString() : ''),
+            supplier_id: prev.supplier_id || (suppliersData.length > 0 ? suppliersData[0].id.toString() : ''),
+            location_id: prev.location_id || (locationsData.length > 0 ? locationsData[0].id.toString() : ''),
+          }));
+        }
+
+        // Debug log for category selection
+        console.log('Form data after loading:', {
+          category_id: formData.category_id,
+          categoriesCount: categoriesData.length,
+          firstCategory: categoriesData[0]?.name
         });
       } catch (error) {
         console.error('Failed to load form data:', error);
@@ -885,7 +991,12 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
     const currentStepFields = currentStepConfig.fields;
 
     return (
-      <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.stepContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
         {/* Product Type Selection - Step 0 */}
         {currentStep === 0 && (
           <View style={styles.section}>
@@ -983,10 +1094,11 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
                       Selected: {selectedExistingProduct.name}
                     </Text>
                     <Text style={[styles.selectedProductDetails, { color: theme.colors.text.secondary }]}>
-                      Code: {selectedExistingProduct.product_code} • Current Stock: {selectedExistingProduct.current_stock || 0}
+                      Code: {selectedExistingProduct.product_code} • Current Stock: {parseFloat(selectedExistingProduct.current_stock?.toString() || '0').toFixed(2)}
                     </Text>
                     <Text style={[styles.selectedProductDetails, { color: theme.colors.text.secondary }]}>
-                      Category ID: {selectedExistingProduct.category_id || 'N/A'} • Supplier ID: {selectedExistingProduct.supplier_id || 'N/A'}
+                      Category: {categories.find(c => c.id === selectedExistingProduct.category_id)?.name || 'N/A'} •
+                      Supplier: {suppliers.find(s => s.id === selectedExistingProduct.supplier_id)?.name || 'N/A'}
                     </Text>
                     <Text style={[styles.selectedProductDetails, { color: theme.colors.text.secondary }]}>
                       Next Lot: {(selectedExistingProduct.current_lot_number || 0) + 1}
@@ -1225,10 +1337,13 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
                         }
                       ]}>
                         <Text style={[styles.stockSummaryText, { color: theme.colors.text.secondary }]}>
-                          Previous total stock: {selectedExistingProduct.total_stock || selectedExistingProduct.current_stock || 0}
+                          Previous total stock: {parseFloat((selectedExistingProduct.total_stock || selectedExistingProduct.current_stock)?.toString() || '0').toFixed(2)}
                         </Text>
                         <Text style={[styles.stockSummaryText, { color: theme.colors.text.primary, fontWeight: '600' }]}>
-                          Total stock: {selectedExistingProduct.total_stock || selectedExistingProduct.current_stock || 0} + {formData.current_stock || '0'} = {(parseFloat((selectedExistingProduct.total_stock || selectedExistingProduct.current_stock)?.toString() || '0') + parseFloat(formData.current_stock || '0'))}
+                          Total stock: {parseFloat((selectedExistingProduct.total_stock || selectedExistingProduct.current_stock)?.toString() || '0').toFixed(2)} + {parseFloat(formData.current_stock || '0').toFixed(2)} = {(parseFloat((selectedExistingProduct.total_stock || selectedExistingProduct.current_stock)?.toString() || '0') + parseFloat(formData.current_stock || '0')).toFixed(2)}
+                        </Text>
+                        <Text style={[styles.stockSummarySubtext, { color: theme.colors.text.muted }]}>
+                          Total stock quantity for this lot
                         </Text>
                       </View>
                     )}
@@ -1657,8 +1772,22 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 1000,
   },
+  dropdownOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 99998,
+    backgroundColor: 'transparent',
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   dropdownContainerOpen: {
-    zIndex: 9999,
+    zIndex: 99999,
+    elevation: 99999,
   },
   dropdownButton: {
     flexDirection: 'row',
@@ -1684,18 +1813,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   dropdownList: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
     borderRadius: 12,
-    elevation: 10000,
+    elevation: 99999,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    zIndex: 10000,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    zIndex: 99999,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    borderColor: 'rgba(0, 0, 0, 0.15)',
   },
   dropdownListBottom: {
     top: '100%',
@@ -1722,6 +1848,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     fontWeight: '600',
+  },
+  dropdownItemContent: {
+    flex: 1,
+  },
+  dropdownItemStock: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  stockSummarySubtext: {
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   searchContainer: {
     padding: 12,

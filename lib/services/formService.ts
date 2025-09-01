@@ -87,6 +87,45 @@ export interface SaleFormData {
 }
 
 export class FormService {
+  // Helper function to calculate total stock from all lots
+  private static async calculateAndUpdateTotalStock(productId: number): Promise<number> {
+    try {
+      // Get sum of all quantities from product lots
+      const { data: lotSums, error } = await supabase
+        .from('products_lot')
+        .select('quantity')
+        .eq('product_id', productId);
+
+      if (error) {
+        console.error('Error fetching lot quantities:', error);
+        return 0;
+      }
+
+      // Calculate total stock from all lots
+      const totalStock = lotSums?.reduce((sum, lot) => sum + (parseFloat(lot.quantity) || 0), 0) || 0;
+
+      // Update the product's total_stock column
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({
+          total_stock: totalStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', productId);
+
+      if (updateError) {
+        console.error('Error updating total stock:', updateError);
+      } else {
+        console.log(`✅ Total stock updated for product ${productId}: ${totalStock}`);
+      }
+
+      return totalStock;
+    } catch (error) {
+      console.error('Error calculating total stock:', error);
+      return 0;
+    }
+  }
+
   // Helper function to ensure user context is set
   private static async ensureUserContext(userId?: number): Promise<void> {
     // Skip in demo mode
@@ -157,6 +196,36 @@ export class FormService {
       if (error) {
         console.error('Error creating product:', error);
         return { success: false, error: error.message };
+      }
+
+      // If the product has initial stock, create the first lot
+      if (product && (data.current_stock || 0) > 0) {
+        const firstLotData = {
+          product_id: product.id,
+          lot_number: 1, // First lot is always number 1
+          purchase_price: data.purchase_price || 0,
+          selling_price: data.selling_price || 0,
+          quantity: data.current_stock || 0,
+          supplier_id: data.supplier_id || null,
+          location_id: data.location_id || null,
+          received_date: new Date().toISOString(),
+        };
+
+        const { data: firstLot, error: lotError } = await supabase
+          .from('products_lot')
+          .insert([firstLotData])
+          .select()
+          .single();
+
+        if (lotError) {
+          console.error('Error creating first product lot:', lotError);
+          // Don't fail the product creation, just log the error
+          console.warn('Product created but first lot creation failed');
+        } else {
+          console.log('✅ First lot created successfully:', firstLot);
+          // Calculate and update total_stock after creating the first lot
+          await this.calculateAndUpdateTotalStock(product.id);
+        }
       }
 
       return { success: true, data: product };
@@ -337,16 +406,85 @@ export class FormService {
         return { success: false, error: updateError.message };
       }
 
+      // Calculate and update total_stock from all lots
+      const totalStock = await this.calculateAndUpdateTotalStock(productId);
+
       return {
         success: true,
         data: {
           ...updatedProduct,
+          total_stock: totalStock,
           lot: newLot
         }
       };
     } catch (error) {
       console.error('Error adding stock to existing product:', error);
       return { success: false, error: 'Failed to add stock to existing product' };
+    }
+  }
+
+  // Test function to verify lot number increment functionality
+  static async testLotIncrement(productId: number, userId: number): Promise<void> {
+    console.log(`🧪 Testing lot increment for product ID: ${productId}`);
+
+    // Test adding stock 3 times to see lot numbers increment
+    for (let i = 1; i <= 3; i++) {
+      const testStockData: ProductFormData = {
+        name: '',
+        product_code: '',
+        current_stock: 10 * i, // 10, 20, 30
+        purchase_price: 100 + (i * 10), // 110, 120, 130
+        selling_price: 150 + (i * 10), // 160, 170, 180
+      };
+
+      console.log(`📦 Adding stock batch ${i}...`);
+      const result = await this.addStockToExistingProduct(productId, testStockData, userId);
+
+      if (result.success) {
+        console.log(`✅ Batch ${i} added successfully. Lot number: ${result.data?.lot?.lot_number}`);
+      } else {
+        console.error(`❌ Batch ${i} failed: ${result.error}`);
+      }
+    }
+
+    // Verify the lots were created correctly
+    const { data: lots } = await supabase
+      .from('products_lot')
+      .select('*')
+      .eq('product_id', productId)
+      .order('lot_number');
+
+    console.log('📋 Final lots for this product:', lots);
+  }
+
+  // Utility function to recalculate total_stock for all products
+  static async recalculateAllTotalStocks(): Promise<{ success: boolean; updated: number; error?: string }> {
+    try {
+      await this.ensureUserContext();
+
+      // Get all products
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id');
+
+      if (productsError) {
+        return { success: false, updated: 0, error: productsError.message };
+      }
+
+      let updatedCount = 0;
+
+      // Update total_stock for each product
+      for (const product of products || []) {
+        await this.calculateAndUpdateTotalStock(product.id);
+        updatedCount++;
+      }
+
+      console.log(`✅ Recalculated total_stock for ${updatedCount} products`);
+      return { success: true, updated: updatedCount };
+
+    } catch (error) {
+      console.error('Error recalculating total stocks:', error);
+      return { success: false, updated: 0, error: 'Failed to recalculate total stocks' };
     }
   }
 
