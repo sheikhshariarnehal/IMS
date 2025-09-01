@@ -1953,6 +1953,261 @@ export class FormService {
     }
   }
 
+  // Enhanced Transfer Operations with Lot Management
+  static async createTransferWithLot(transferData: {
+    product_id: number;
+    from_location_id: number;
+    to_location_id: number;
+    quantity: number;
+    selected_lot_id: number;
+    notes?: string;
+  }, userId: number): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      await this.ensureUserContext(userId);
+
+      // Start a transaction-like operation
+      // 1. First, validate the lot has enough quantity
+      const { data: selectedLot, error: lotError } = await supabase
+        .from('products_lot')
+        .select('*')
+        .eq('id', transferData.selected_lot_id)
+        .eq('product_id', transferData.product_id)
+        .single();
+
+      if (lotError || !selectedLot) {
+        return { success: false, error: 'Selected lot not found' };
+      }
+
+      if (selectedLot.quantity < transferData.quantity) {
+        return { success: false, error: 'Insufficient quantity in selected lot' };
+      }
+
+      // 2. Create the transfer record
+      const { data: transfer, error: transferError } = await supabase
+        .from('transfers')
+        .insert([{
+          product_id: transferData.product_id,
+          from_location_id: transferData.from_location_id,
+          to_location_id: transferData.to_location_id,
+          quantity: transferData.quantity,
+          notes: transferData.notes,
+          requested_by: userId,
+          transfer_status: 'requested',
+        }])
+        .select()
+        .single();
+
+      if (transferError) {
+        console.error('Error creating transfer:', transferError);
+        return { success: false, error: transferError.message };
+      }
+
+      // 3. Update the source lot quantity
+      const { error: updateLotError } = await supabase
+        .from('products_lot')
+        .update({
+          quantity: selectedLot.quantity - transferData.quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', transferData.selected_lot_id);
+
+      if (updateLotError) {
+        console.error('Error updating source lot:', updateLotError);
+        return { success: false, error: 'Failed to update source lot quantity' };
+      }
+
+      // 4. Create new lot at destination location
+      const newLotResult = await this.createNewLotAtDestination({
+        product_id: transferData.product_id,
+        location_id: transferData.to_location_id,
+        quantity: transferData.quantity,
+        purchase_price: selectedLot.purchase_price,
+        selling_price: selectedLot.selling_price,
+        supplier_id: selectedLot.supplier_id,
+        source_lot_id: transferData.selected_lot_id,
+      }, userId);
+
+      if (!newLotResult.success) {
+        return { success: false, error: newLotResult.error };
+      }
+
+      // 5. Update the source product's total stock (decrease by transferred quantity)
+      const { data: currentProduct, error: productError } = await supabase
+        .from('products')
+        .select('current_stock, total_stock')
+        .eq('id', transferData.product_id)
+        .single();
+
+      if (!productError && currentProduct) {
+        const { error: updateSourceError } = await supabase
+          .from('products')
+          .update({
+            current_stock: Math.max(0, currentProduct.current_stock - transferData.quantity),
+            total_stock: Math.max(0, currentProduct.total_stock - transferData.quantity),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', transferData.product_id);
+
+        if (updateSourceError) {
+          console.error('Error updating source product stock:', updateSourceError);
+          // Don't fail the transfer for this, just log it
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          transfer,
+          new_lot: newLotResult.data,
+          source_lot_updated: true
+        }
+      };
+    } catch (error) {
+      console.error('Error creating transfer with lot:', error);
+      return { success: false, error: 'Failed to create transfer with lot management' };
+    }
+  }
+
+  // Create new lot at destination location
+  static async createNewLotAtDestination(lotData: {
+    product_id: number;
+    location_id: number;
+    quantity: number;
+    purchase_price: number;
+    selling_price: number;
+    supplier_id?: number;
+    source_lot_id: number;
+  }, userId: number): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      // Get the next lot number for this product
+      const { data: maxLotData, error: maxLotError } = await supabase
+        .from('products_lot')
+        .select('lot_number')
+        .eq('product_id', lotData.product_id)
+        .order('lot_number', { ascending: false })
+        .limit(1);
+
+      if (maxLotError) {
+        console.error('Error getting max lot number:', maxLotError);
+        return { success: false, error: 'Failed to determine next lot number' };
+      }
+
+      const nextLotNumber = maxLotData && maxLotData.length > 0
+        ? maxLotData[0].lot_number + 1
+        : 1;
+
+      // Create the new lot
+      const { data: newLot, error: createError } = await supabase
+        .from('products_lot')
+        .insert([{
+          product_id: lotData.product_id,
+          lot_number: nextLotNumber,
+          quantity: lotData.quantity,
+          purchase_price: lotData.purchase_price,
+          selling_price: lotData.selling_price,
+          supplier_id: lotData.supplier_id,
+          location_id: lotData.location_id,
+          received_date: new Date().toISOString(),
+          status: 'active',
+          notes: `Transferred from lot ${lotData.source_lot_id}`,
+          created_by: userId,
+        }])
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Error creating new lot:', createError);
+        return { success: false, error: createError.message };
+      }
+
+      return { success: true, data: newLot };
+    } catch (error) {
+      console.error('Error creating new lot at destination:', error);
+      return { success: false, error: 'Failed to create new lot at destination' };
+    }
+  }
+
+  // Update product stock at specific location
+  static async updateProductStockAtLocation(productId: number, locationId: number, quantityChange: number): Promise<void> {
+    try {
+      // Check if product exists at this location
+      const { data: existingProduct, error: checkError } = await supabase
+        .from('products')
+        .select('current_stock, total_stock')
+        .eq('id', productId)
+        .eq('location_id', locationId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking product at location:', checkError);
+        return;
+      }
+
+      if (existingProduct) {
+        // Update existing product stock
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({
+            current_stock: existingProduct.current_stock + quantityChange,
+            total_stock: existingProduct.total_stock + quantityChange,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', productId)
+          .eq('location_id', locationId);
+
+        if (updateError) {
+          console.error('Error updating product stock:', updateError);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating product stock at location:', error);
+    }
+  }
+
+  // Get product lots for selection
+  static async getProductLots(productId: number): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('products_lot')
+        .select('*')
+        .eq('product_id', productId)
+        .eq('status', 'active')
+        .gt('quantity', 0)
+        .order('lot_number', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching product lots:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data: data || [] };
+    } catch (error) {
+      console.error('Error fetching product lots:', error);
+      return { success: false, error: 'Failed to fetch product lots' };
+    }
+  }
+
+  // Get locations for transfer
+  static async getActiveLocations(): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('locations')
+        .select('id, name, type, address')
+        .eq('status', 'active')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching locations:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data: data || [] };
+    } catch (error) {
+      console.error('Error fetching locations:', error);
+      return { success: false, error: 'Failed to fetch locations' };
+    }
+  }
+
   private static getDefaultSalesStats() {
     return {
       totalSales: { value: 0, formatted: '0' },

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,20 +32,24 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import SharedLayout from '@/components/SharedLayout';
+import TransferForm from '@/components/forms/TransferForm';
+import { supabase } from '@/lib/supabase';
 
 const { width } = Dimensions.get('window');
 const isMobile = width < 768;
 
 // Types
 interface Product {
-  id: string;
+  id: number;
   name: string;
-  productCode: string;
+  product_code: string;
   image?: string;
-  stock: number;
-  location: string;
-  category: string;
-  lot?: string;
+  current_stock: number;
+  total_stock: number;
+  location_id: number;
+  location_name: string;
+  category_id: number;
+  category_name?: string;
 }
 
 interface TransferRequest {
@@ -57,7 +61,7 @@ interface TransferRequest {
   destinationLocation: string;
   requestedBy: string;
   requestedAt: Date;
-  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  status: 'requested' | 'approved' | 'rejected' | 'completed' | 'in_transit';
 }
 
 // Mock data
@@ -124,6 +128,11 @@ const TransferPage = React.memo(function TransferPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
+  const [loading, setLoading] = useState(false);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -133,6 +142,116 @@ const TransferPage = React.memo(function TransferPage() {
   });
 
   const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  // Fetch products from database
+  useEffect(() => {
+    fetchProducts();
+    fetchTransferRequests();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          id,
+          name,
+          product_code,
+          current_stock,
+          total_stock,
+          location_id,
+          category_id,
+          locations(name),
+          categories(name)
+        `)
+        .gt('total_stock', 0)
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching products:', error);
+        return;
+      }
+
+      const formattedProducts = data?.map(product => ({
+        id: product.id,
+        name: product.name,
+        product_code: product.product_code,
+        current_stock: product.current_stock,
+        total_stock: product.total_stock,
+        location_id: product.location_id,
+        location_name: product.locations?.name || 'Unknown Location',
+        category_id: product.category_id,
+        category_name: product.categories?.name || 'Unknown Category',
+      })) || [];
+
+      setProducts(formattedProducts);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTransferRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('transfers')
+        .select(`
+          id,
+          product_id,
+          quantity,
+          transfer_status,
+          notes,
+          requested_at,
+          products(name),
+          from_location:locations!transfers_from_location_id_fkey(name),
+          to_location:locations!transfers_to_location_id_fkey(name),
+          requested_by_user:users!transfers_requested_by_fkey(name)
+        `)
+        .order('requested_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching transfer requests:', error);
+        return;
+      }
+
+      const formattedRequests = data?.map(transfer => ({
+        id: transfer.id.toString(),
+        productId: transfer.product_id.toString(),
+        productName: transfer.products?.name || 'Unknown Product',
+        quantity: transfer.quantity,
+        sourceLocation: transfer.from_location?.name || 'Unknown',
+        destinationLocation: transfer.to_location?.name || 'Unknown',
+        requestedBy: transfer.requested_by_user?.name || 'Unknown User',
+        requestedAt: new Date(transfer.requested_at),
+        status: transfer.transfer_status as 'pending' | 'approved' | 'rejected' | 'completed',
+      })) || [];
+
+      setTransferRequests(formattedRequests);
+    } catch (error) {
+      console.error('Error fetching transfer requests:', error);
+    }
+  };
+
+  const handleTransferProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setShowTransferForm(true);
+  };
+
+  const handleTransferSubmit = (transferData: any) => {
+    // Refresh the data after successful transfer
+    fetchProducts();
+    fetchTransferRequests();
+    setShowTransferForm(false);
+    setSelectedProduct(null);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchProducts(), fetchTransferRequests()]);
+    setRefreshing(false);
+  };
 
   // Optimized styles with useMemo
   const styles = useMemo(() => StyleSheet.create({
@@ -335,21 +454,21 @@ const TransferPage = React.memo(function TransferPage() {
 
   // Filter products based on search query and filters
   const filteredProducts = useMemo(() => {
-    return mockProducts.filter(product => {
+    return products.filter(product => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.productCode.toLowerCase().includes(searchQuery.toLowerCase());
+        product.product_code.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesCategory = !filters.category || product.category === filters.category;
-      const matchesLocation = !filters.location || product.location === filters.location;
+      const matchesCategory = !filters.category || product.category_name === filters.category;
+      const matchesLocation = !filters.location || product.location_name === filters.location;
 
       return matchesSearch && matchesCategory && matchesLocation;
     });
-  }, [searchQuery, filters]);
+  }, [searchQuery, filters, products]);
 
   // Filter transfer requests
   const filteredRequests = useMemo(() => {
-    return mockTransferRequests.filter(request => {
+    return transferRequests.filter(request => {
       const matchesSearch =
         request.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         request.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -358,14 +477,7 @@ const TransferPage = React.memo(function TransferPage() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [searchQuery, filters]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
-  };
+  }, [searchQuery, filters, transferRequests]);
 
   const renderTabBar = () => (
     <View style={styles.tabBar}>
@@ -427,17 +539,17 @@ const TransferPage = React.memo(function TransferPage() {
     <View style={styles.productCard}>
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.productCode}>{item.productCode}</Text>
+        <Text style={styles.productCode}>{item.product_code}</Text>
 
         <View style={styles.productMetaRow}>
           <View style={styles.productMetaItem}>
             <MapPin size={14} color={theme.colors.text.secondary} />
-            <Text style={styles.productMetaText}>{item.location}</Text>
+            <Text style={styles.productMetaText}>{item.location_name}</Text>
           </View>
 
           <View style={styles.productMetaItem}>
             <Package size={14} color={theme.colors.text.secondary} />
-            <Text style={styles.productMetaText}>Stock: {item.stock}</Text>
+            <Text style={styles.productMetaText}>Stock: {item.total_stock}</Text>
           </View>
         </View>
       </View>
@@ -445,7 +557,7 @@ const TransferPage = React.memo(function TransferPage() {
       <View style={styles.productActions}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: `${theme.colors.primary}20` }]}
-          onPress={() => {/* Handle transfer */}}
+          onPress={() => handleTransferProduct(item)}
         >
           <Repeat size={20} color={theme.colors.primary} />
         </TouchableOpacity>
@@ -458,13 +570,17 @@ const TransferPage = React.memo(function TransferPage() {
     let StatusIcon;
 
     switch (item.status) {
-      case 'pending':
+      case 'requested':
         statusColor = theme.colors.status.warning;
         StatusIcon = Clock;
         break;
       case 'approved':
         statusColor = theme.colors.status.info;
         StatusIcon = CheckCircle;
+        break;
+      case 'in_transit':
+        statusColor = theme.colors.status.info;
+        StatusIcon = Send;
         break;
       case 'rejected':
         statusColor = theme.colors.status.error;
@@ -610,6 +726,18 @@ const TransferPage = React.memo(function TransferPage() {
         {renderSearchBar()}
         {renderContent()}
       </View>
+
+      {/* Transfer Form Modal */}
+      <TransferForm
+        visible={showTransferForm}
+        onClose={() => {
+          setShowTransferForm(false);
+          setSelectedProduct(null);
+        }}
+        onSubmit={handleTransferSubmit}
+        product={selectedProduct}
+        locations={[]}
+      />
     </SharedLayout>
   );
 });

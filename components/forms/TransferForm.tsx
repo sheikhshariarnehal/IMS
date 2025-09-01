@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
   Animated,
   TouchableWithoutFeedback,
-  StatusBar,
+  FlatList,
 } from 'react-native';
 import {
   X,
@@ -22,29 +22,38 @@ import {
   MapPin,
   ArrowRight,
   Calendar,
-  Clock,
   Check,
   ChevronDown,
-  ChevronUp,
   AlertCircle,
   Sparkles,
-  Star,
+  Hash,
+  Search,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { FormService, type TransferFormData as FormServiceTransferData } from '@/lib/services/formService';
+import { FormService } from '@/lib/services/formService';
+import LotSelectionModal from './LotSelectionModal';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { height: screenHeight } = Dimensions.get('window');
 
 interface TransferFormData {
   productId: string;
   productName: string;
   quantity: string;
-  sourceLocation: string;
-  destinationLocation: string;
+  sourceLocationId: string;
+  sourceLocationName: string;
+  destinationLocationId: string;
+  destinationLocationName: string;
   transferDate: Date;
   notes: string;
-  lotNumber: string;
+  selectedLot: any;
+}
+
+interface Location {
+  id: number;
+  name: string;
+  type: string;
+  address: string;
 }
 
 interface TransferFormProps {
@@ -55,23 +64,9 @@ interface TransferFormProps {
   locations: string[];
 }
 
-// Enhanced location data with icons and types
-const enhancedLocations = [
-  { id: '1', name: 'Warehouse 1', type: 'warehouse', icon: '🏭' },
-  { id: '2', name: 'Warehouse 2', type: 'warehouse', icon: '🏭' },
-  { id: '3', name: 'Warehouse 3', type: 'warehouse', icon: '🏭' },
-  { id: '4', name: 'Showroom 1', type: 'showroom', icon: '🏪' },
-  { id: '5', name: 'Showroom 2', type: 'showroom', icon: '🏪' },
-  { id: '6', name: 'Storage A', type: 'storage', icon: '📦' },
-  { id: '7', name: 'Storage B', type: 'storage', icon: '📦' },
-  { id: '8', name: 'Main Store', type: 'store', icon: '🏬' },
-  { id: '9', name: 'Branch Store', type: 'store', icon: '🏬' },
-  { id: '10', name: 'Online Warehouse', type: 'warehouse', icon: '💻' },
-];
-
-export default function TransferForm({ visible, onClose, onSubmit, product, locations }: TransferFormProps) {
+export default function TransferForm({ visible, onClose, onSubmit, product }: TransferFormProps) {
   const { theme } = useTheme();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const slideAnim = useRef(new Animated.Value(-screenHeight)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -80,27 +75,46 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     productId: product?.id || '',
     productName: product?.name || '',
     quantity: '',
-    sourceLocation: product?.location || '',
-    destinationLocation: '',
+    sourceLocationId: product?.location_id?.toString() || '',
+    sourceLocationName: product?.location_name || '',
+    destinationLocationId: '',
+    destinationLocationName: '',
     transferDate: new Date(),
     notes: '',
-    lotNumber: product?.lot || '',
+    selectedLot: null,
   };
 
   const [formData, setFormData] = useState<TransferFormData>(initialFormState);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(0);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [showLotSelection, setShowLotSelection] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [availableLocations, setAvailableLocations] = useState<Location[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const canTransferProduct = hasPermission('inventory', 'transfer');
 
   // Form steps for better UX
   const steps = [
-    { title: 'Product Details', icon: Package },
+    { title: 'Select Lot', icon: Hash },
     { title: 'Transfer Details', icon: Repeat },
     { title: 'Confirmation', icon: Check },
   ];
+
+  // Fetch available locations
+  useEffect(() => {
+    const fetchLocations = async () => {
+      const result = await FormService.getActiveLocations();
+      if (result.success && result.data) {
+        setAvailableLocations(result.data);
+      }
+    };
+
+    if (visible) {
+      fetchLocations();
+    }
+  }, [visible]);
 
   // Enhanced animations
   useEffect(() => {
@@ -145,22 +159,35 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     }
   }, [visible, overlayOpacity, slideAnim, scaleAnim]);
 
-  // Reset form when opening
+  // Reset form when opening or closing
   useEffect(() => {
     if (visible && product) {
       setFormData({
         productId: product.id || '',
         productName: product.name || '',
         quantity: '',
-        sourceLocation: product.location || '',
-        destinationLocation: '',
+        sourceLocationId: product.location_id?.toString() || '',
+        sourceLocationName: product.location_name || '',
+        destinationLocationId: '',
+        destinationLocationName: '',
         transferDate: new Date(),
         notes: '',
-        lotNumber: product.lot || '',
+        selectedLot: null,
       });
       setErrors({});
       setCurrentStep(0);
       setSearchText('');
+      setShowLocationDropdown(false);
+      setShowLotSelection(false);
+    } else if (!visible) {
+      // Reset everything when modal closes
+      setFormData(initialFormState);
+      setErrors({});
+      setCurrentStep(0);
+      setSearchText('');
+      setShowLocationDropdown(false);
+      setShowLotSelection(false);
+      setLoading(false);
     }
   }, [visible, product]);
 
@@ -168,31 +195,38 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     setShowLocationDropdown(false);
   };
 
+  const handleLotSelection = (lot: any) => {
+    setFormData(prev => ({ ...prev, selectedLot: lot }));
+    setShowLotSelection(false);
+  };
+
   const validateStep = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (currentStep === 0) {
+      if (!formData.selectedLot) {
+        newErrors.selectedLot = 'Please select a lot for transfer';
+      }
+
       if (!formData.quantity.trim()) {
         newErrors.quantity = 'Quantity is required';
       } else if (isNaN(Number(formData.quantity)) || Number(formData.quantity) <= 0) {
         newErrors.quantity = 'Please enter a valid quantity';
-      } else if (product && Number(formData.quantity) > product.stock) {
-        newErrors.quantity = 'Quantity exceeds available stock';
-      }
-
-      if (!formData.lotNumber.trim()) {
-        newErrors.lotNumber = 'Lot number is required';
+      } else if (formData.selectedLot && Number(formData.quantity) > formData.selectedLot.quantity) {
+        newErrors.quantity = 'Quantity exceeds available quantity in selected lot';
+      } else if (product && Number(formData.quantity) > product.total_stock) {
+        newErrors.quantity = 'Quantity exceeds total available stock';
       }
     } else if (currentStep === 1) {
-      if (!formData.sourceLocation.trim()) {
+      if (!formData.sourceLocationId.trim()) {
         newErrors.sourceLocation = 'Source location is required';
       }
 
-      if (!formData.destinationLocation.trim()) {
+      if (!formData.destinationLocationId.trim()) {
         newErrors.destinationLocation = 'Destination location is required';
       }
 
-      if (formData.sourceLocation === formData.destinationLocation) {
+      if (formData.sourceLocationId === formData.destinationLocationId) {
         newErrors.destinationLocation = 'Source and destination cannot be the same';
       }
     }
@@ -221,31 +255,45 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
       return;
     }
 
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    setLoading(true);
     try {
-      // Prepare transfer data for Supabase
-      const transferData: FormServiceTransferData = {
+      // Prepare transfer data for enhanced transfer with lot management
+      const transferData = {
         product_id: parseInt(product?.id || '1'),
-        from_location_id: parseInt(formData.fromLocation),
-        to_location_id: parseInt(formData.toLocation),
+        from_location_id: parseInt(formData.sourceLocationId),
+        to_location_id: parseInt(formData.destinationLocationId),
         quantity: parseFloat(formData.quantity),
+        selected_lot_id: formData.selectedLot?.id,
         notes: formData.notes || undefined,
       };
 
-      // Get current user from auth context
-      const { user } = useAuth();
-      if (!user?.id) {
-        Alert.alert('Error', 'User not authenticated');
-        return;
-      }
-
-      // Create transfer using FormService
-      const result = await FormService.createTransfer(transferData, user.id);
+      // Create transfer using enhanced FormService method
+      const result = await FormService.createTransferWithLot(transferData, user.id);
 
       if (result.success && result.data) {
+        // Reset form state
+        setFormData(initialFormState);
+        setCurrentStep(0);
+        setErrors({});
+        setSearchText('');
+        setShowLocationDropdown(false);
+        setShowLotSelection(false);
+
         Alert.alert(
           'Success',
-          'Transfer request has been created successfully!',
-          [{ text: 'OK', onPress: () => { onSubmit(result.data); onClose(); } }]
+          'Transfer request has been created successfully! A new lot has been created at the destination location.',
+          [{
+            text: 'OK',
+            onPress: () => {
+              onSubmit(result.data);
+              onClose();
+            }
+          }]
         );
       } else {
         Alert.alert('Error', result.error || 'Failed to create transfer request');
@@ -253,6 +301,8 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     } catch (error) {
       console.error('Transfer creation error:', error);
       Alert.alert('Error', 'Failed to create transfer request');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -292,123 +342,221 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     </View>
   );
 
-  const renderEnhancedDropdown = () => {
-    const filteredLocations = enhancedLocations.filter(location => 
+  const renderLocationSelector = () => {
+    const filteredLocations = availableLocations.filter(location =>
       location.name.toLowerCase().includes(searchText.toLowerCase()) &&
-      location.name !== formData.sourceLocation
+      location.id.toString() !== formData.sourceLocationId
     );
 
+    const getLocationIcon = (type: string) => {
+      switch (type) {
+        case 'warehouse': return '🏭';
+        case 'showroom': return '🏪';
+        case 'storage': return '📦';
+        case 'store': return '🏬';
+        default: return '📍';
+      }
+    };
+
     return (
-      <View style={styles.dropdownContainer}>
-        <View style={[
-          styles.searchInputContainer,
-          { borderColor: errors.destinationLocation ? theme.colors.status.error : theme.colors.primary + '30' },
-          showLocationDropdown && styles.searchInputContainerActive,
-        ]}>
-          <MapPin size={18} color={theme.colors.text.secondary} style={styles.inputIcon} />
-          <TextInput
-            style={styles.searchInput}
-            value={showLocationDropdown ? searchText : formData.destinationLocation}
-            onChangeText={(text) => {
-              setSearchText(text);
-              if (!showLocationDropdown) {
-                setShowLocationDropdown(true);
-              }
-            }}
-            onFocus={() => setShowLocationDropdown(true)}
-            placeholder={formData.destinationLocation || 'Search destination location'}
-            placeholderTextColor={theme.colors.text.muted}
-          />
-          <TouchableOpacity
-            onPress={() => setShowLocationDropdown(!showLocationDropdown)}
-          >
-            <ChevronDown 
-              size={20} 
-              color={theme.colors.text.muted} 
+      <View style={styles.locationSelectorContainer}>
+        <TouchableOpacity
+          style={[
+            styles.locationSelectorButton,
+            { borderColor: errors.destinationLocation ? theme.colors.status.error : theme.colors.border },
+            showLocationDropdown && { borderColor: theme.colors.primary }
+          ]}
+          onPress={() => setShowLocationDropdown(!showLocationDropdown)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.locationSelectorContent}>
+            <MapPin size={18} color={theme.colors.text.secondary} style={styles.inputIcon} />
+            <View style={styles.locationSelectorTextContainer}>
+              {formData.destinationLocationName ? (
+                <View style={styles.selectedLocationInfo}>
+                  <Text style={styles.selectedLocationText}>{formData.destinationLocationName}</Text>
+                  <Text style={styles.selectedLocationSubtext}>
+                    {availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || 'Location'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.locationSelectorPlaceholder}>Select destination location</Text>
+              )}
+            </View>
+            <ChevronDown
+              size={20}
+              color={theme.colors.text.muted}
               style={[
                 styles.dropdownIcon,
                 showLocationDropdown && { transform: [{ rotate: '180deg' }] }
               ]}
             />
-          </TouchableOpacity>
-        </View>
-        
-        {showLocationDropdown && (
-          <View style={styles.dropdownList}>
-            <ScrollView 
-              nestedScrollEnabled={true}
-              style={{ maxHeight: 200 }}
-              showsVerticalScrollIndicator={false}
-              bounces={true}
-              scrollEventThrottle={16}
-              decelerationRate="normal"
-            >
-              {filteredLocations.length > 0 ? filteredLocations.map((location, index) => (
-                <TouchableOpacity
-                  key={location.id}
-                  style={[
-                    styles.dropdownItem,
-                    index === filteredLocations.length - 1 && { borderBottomWidth: 0 }
-                  ]}
-                  onPress={() => {
-                    setFormData(prev => ({ ...prev, destinationLocation: location.name }));
-                    setSearchText('');
-                    setShowLocationDropdown(false);
-                  }}
-                >
-                  <View style={styles.dropdownItemContent}>
-                    <Text style={styles.dropdownItemIcon}>{location.icon}</Text>
-                    <View style={styles.dropdownItemTextContainer}>
-                      <Text style={styles.dropdownItemText}>{location.name}</Text>
-                      <Text style={styles.dropdownItemType}>{location.type}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              )) : (
-                <View style={styles.noResultsContainer}>
-                  <Text style={styles.noResultsText}>No locations found</Text>
-                </View>
-              )}
-            </ScrollView>
           </View>
-        )}
+        </TouchableOpacity>
+
+        {/* Location Selection Modal */}
+        <Modal
+          visible={showLocationDropdown}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLocationDropdown(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowLocationDropdown(false)}>
+            <View style={styles.locationModalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.locationModalContent}>
+                  <View style={styles.locationModalHeader}>
+                    <Text style={styles.locationModalTitle}>Select Destination Location</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowLocationDropdown(false)}
+                      style={styles.locationModalCloseButton}
+                    >
+                      <X size={24} color={theme.colors.text.primary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.locationSearchContainer}>
+                    <Search size={18} color={theme.colors.text.secondary} />
+                    <TextInput
+                      style={styles.locationSearchInput}
+                      value={searchText}
+                      onChangeText={setSearchText}
+                      placeholder="Search locations..."
+                      placeholderTextColor={theme.colors.text.muted}
+                    />
+                  </View>
+
+                  <FlatList
+                    data={filteredLocations}
+                    keyExtractor={(item) => item.id.toString()}
+                    style={styles.locationList}
+                    showsVerticalScrollIndicator={false}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.locationItem}
+                        onPress={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            destinationLocationId: item.id.toString(),
+                            destinationLocationName: item.name
+                          }));
+                          setSearchText('');
+                          setShowLocationDropdown(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.locationItemContent}>
+                          <View style={styles.locationItemIconContainer}>
+                            <Text style={styles.locationItemIcon}>{getLocationIcon(item.type)}</Text>
+                          </View>
+                          <View style={styles.locationItemTextContainer}>
+                            <Text style={styles.locationItemName}>{item.name}</Text>
+                            <Text style={styles.locationItemType}>{item.type}</Text>
+                            {item.address && (
+                              <Text style={styles.locationItemAddress} numberOfLines={1}>
+                                {item.address}
+                              </Text>
+                            )}
+                          </View>
+                          <ChevronDown
+                            size={16}
+                            color={theme.colors.text.muted}
+                            style={{ transform: [{ rotate: '-90deg' }] }}
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      <View style={styles.noLocationsContainer}>
+                        <MapPin size={48} color={theme.colors.text.muted} />
+                        <Text style={styles.noLocationsText}>No locations found</Text>
+                        <Text style={styles.noLocationsSubtext}>Try adjusting your search</Text>
+                      </View>
+                    }
+                  />
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </View>
     );
   };
 
-  const renderProductDetailsStep = () => (
+  const renderLotSelectionStep = () => (
     <View style={styles.stepContent}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          <Package size={18} color={theme.colors.primary} /> Product Information
-        </Text>
-        
+        <View style={styles.sectionTitleContainer}>
+          <Package size={18} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle}>Product Information</Text>
+        </View>
+
         <View style={styles.productCard}>
           <View style={styles.productIconContainer}>
             <Package size={24} color={theme.colors.primary} />
           </View>
           <View style={styles.productInfo}>
             <Text style={styles.productName}>{product?.name}</Text>
-            <Text style={styles.productCode}>{product?.productCode}</Text>
+            <Text style={styles.productCode}>{product?.product_code}</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          <Sparkles size={18} color={theme.colors.primary} /> Stock Information
-        </Text>
-        
+        <View style={styles.sectionTitleContainer}>
+          <Sparkles size={18} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle}>Stock Information</Text>
+        </View>
+
         <View style={styles.stockCard}>
-          <Text style={styles.stockLabel}>Available Stock</Text>
+          <Text style={styles.stockLabel}>Total Available Stock</Text>
           <View style={styles.stockValueContainer}>
-            <Text style={styles.stockValue}>{product?.stock}</Text>
+            <Text style={styles.stockValue}>{product?.total_stock || product?.current_stock}</Text>
             <Text style={styles.stockUnit}>units</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.section}>
+        <View style={styles.inputGroup}>
+          <Text style={[styles.label, styles.requiredLabel]}>Select Lot *</Text>
+          <TouchableOpacity
+            style={[
+              styles.input,
+              styles.lotSelectionButton,
+              errors.selectedLot && styles.inputError,
+              formData.selectedLot && styles.lotSelectionButtonSelected
+            ]}
+            onPress={() => setShowLotSelection(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.lotSelectionContent}>
+              {formData.selectedLot ? (
+                <View style={styles.selectedLotInfo}>
+                  <View style={styles.lotIconContainer}>
+                    <Hash size={16} color={theme.colors.primary} />
+                  </View>
+                  <View style={styles.selectedLotTextContainer}>
+                    <Text style={styles.selectedLotText}>
+                      Lot {formData.selectedLot.lot_number}
+                    </Text>
+                    <Text style={styles.selectedLotSubtext}>
+                      {formData.selectedLot.quantity} units available
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.lotSelectionPlaceholderContainer}>
+                  <Package size={16} color={theme.colors.text.muted} />
+                  <Text style={styles.lotSelectionPlaceholder}>Tap to select a lot</Text>
+                </View>
+              )}
+              <ChevronDown size={20} color={theme.colors.text.muted} />
+            </View>
+          </TouchableOpacity>
+          {errors.selectedLot && <Text style={styles.errorText}>{errors.selectedLot}</Text>}
+        </View>
+
         <View style={styles.inputGroup}>
           <Text style={[styles.label, styles.requiredLabel]}>Quantity to Transfer *</Text>
           <TextInput
@@ -418,20 +566,14 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
             value={formData.quantity}
             onChangeText={(text) => setFormData({ ...formData, quantity: text })}
             placeholderTextColor={theme.colors.text.muted}
+            editable={!!formData.selectedLot}
           />
+          {formData.selectedLot && (
+            <Text style={styles.availableQuantityText}>
+              Available in selected lot: {formData.selectedLot.quantity} units
+            </Text>
+          )}
           {errors.quantity && <Text style={styles.errorText}>{errors.quantity}</Text>}
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={[styles.label, styles.requiredLabel]}>Lot Number *</Text>
-          <TextInput
-            style={[styles.input, errors.lotNumber && styles.inputError]}
-            placeholder="Enter lot number"
-            value={formData.lotNumber}
-            onChangeText={(text) => setFormData({ ...formData, lotNumber: text })}
-            placeholderTextColor={theme.colors.text.muted}
-          />
-          {errors.lotNumber && <Text style={styles.errorText}>{errors.lotNumber}</Text>}
         </View>
       </View>
     </View>
@@ -440,30 +582,32 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
   const renderTransferDetailsStep = () => (
     <View style={styles.stepContent}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          <Repeat size={18} color={theme.colors.primary} /> Transfer Locations
-        </Text>
-        
+        <View style={styles.sectionTitleContainer}>
+          <Repeat size={18} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle}>Transfer Locations</Text>
+        </View>
+
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Source Location</Text>
           <View style={styles.locationDisplayContainer}>
             <MapPin size={18} color={theme.colors.text.secondary} style={styles.inputIcon} />
-            <Text style={styles.locationDisplayText}>{formData.sourceLocation}</Text>
+            <Text style={styles.locationDisplayText}>{formData.sourceLocationName}</Text>
           </View>
         </View>
 
         <View style={styles.inputGroup}>
           <Text style={[styles.label, styles.requiredLabel]}>Destination Location *</Text>
-          {renderEnhancedDropdown()}
+          {renderLocationSelector()}
           {errors.destinationLocation && <Text style={styles.errorText}>{errors.destinationLocation}</Text>}
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          <Calendar size={18} color={theme.colors.primary} /> Transfer Details
-        </Text>
-        
+        <View style={styles.sectionTitleContainer}>
+          <Calendar size={18} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle}>Transfer Details</Text>
+        </View>
+
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Transfer Date</Text>
           <View style={styles.dateContainer}>
@@ -494,10 +638,11 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
   const renderConfirmationStep = () => (
     <View style={styles.stepContent}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          <Check size={18} color={theme.colors.primary} /> Transfer Summary
-        </Text>
-        
+        <View style={styles.sectionTitleContainer}>
+          <Check size={18} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle}>Transfer Summary</Text>
+        </View>
+
         <View style={styles.confirmationCard}>
           <View style={styles.confirmationHeader}>
             <Text style={styles.confirmationTitle}>Review Transfer Details</Text>
@@ -513,10 +658,12 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
               <Text style={styles.confirmationLabel}>Quantity:</Text>
               <Text style={styles.confirmationValue}>{formData.quantity} units</Text>
             </View>
-            <View style={styles.confirmationItem}>
-              <Text style={styles.confirmationLabel}>Lot Number:</Text>
-              <Text style={styles.confirmationValue}>{formData.lotNumber}</Text>
-            </View>
+            {formData.selectedLot && (
+              <View style={styles.confirmationItem}>
+                <Text style={styles.confirmationLabel}>Source Lot:</Text>
+                <Text style={styles.confirmationValue}>Lot {formData.selectedLot.lot_number}</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.confirmationDivider} />
@@ -526,12 +673,12 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
             <View style={styles.transferRoute}>
               <View style={styles.routeItem}>
                 <Text style={styles.routeLabel}>From</Text>
-                <Text style={styles.routeValue}>{formData.sourceLocation}</Text>
+                <Text style={styles.routeValue}>{formData.sourceLocationName}</Text>
               </View>
               <ArrowRight size={20} color={theme.colors.primary} style={styles.routeArrow} />
               <View style={styles.routeItem}>
                 <Text style={styles.routeLabel}>To</Text>
-                <Text style={styles.routeValue}>{formData.destinationLocation}</Text>
+                <Text style={styles.routeValue}>{formData.destinationLocationName}</Text>
               </View>
             </View>
             <View style={styles.confirmationItem}>
@@ -553,7 +700,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
           <View style={styles.confirmationAlert}>
             <AlertCircle size={18} color={theme.colors.status.warning} />
             <Text style={styles.confirmationAlertText}>
-              This action will update inventory levels at both locations immediately.
+              This action will create a new lot at the destination location and update inventory levels.
             </Text>
           </View>
         </View>
@@ -564,7 +711,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
   const renderStepContent = () => {
     switch (currentStep) {
       case 0:
-        return renderProductDetailsStep();
+        return renderLotSelectionStep();
       case 1:
         return renderTransferDetailsStep();
       case 2:
@@ -582,19 +729,18 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     overlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'flex-start',
-      paddingTop: 50,
+      justifyContent: 'flex-end',
     },
     container: {
-      flex: 1,
       backgroundColor: theme.colors.background,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
-      marginHorizontal: 8,
+      maxHeight: '95%',
+      minHeight: '80%',
       elevation: 10,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.15,
+      shadowOpacity: 0.25,
       shadowRadius: 12,
     },
     header: {
@@ -678,13 +824,16 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     section: {
       marginBottom: 24,
     },
+    sectionTitleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
     sectionTitle: {
       fontSize: 18,
       fontWeight: '700',
       color: theme.colors.text.primary,
-      marginBottom: 16,
-      flexDirection: 'row',
-      alignItems: 'center',
+      marginLeft: 8,
       letterSpacing: 0.3,
     },
     productCard: {
@@ -808,28 +957,43 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
       color: theme.colors.text.primary,
       fontWeight: '500',
     },
-    dropdownContainer: {
-      position: 'relative',
-      zIndex: 99999,
+    locationSelectorContainer: {
+      width: '100%',
     },
-    searchInputContainer: {
+    locationSelectorButton: {
       borderWidth: 2,
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingVertical: 14,
       backgroundColor: theme.colors.backgroundTertiary,
+      minHeight: 56,
+    },
+    locationSelectorContent: {
       flexDirection: 'row',
       alignItems: 'center',
     },
-    searchInputContainerActive: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary + '10',
-    },
-    searchInput: {
+    locationSelectorTextContainer: {
       flex: 1,
+      marginHorizontal: 12,
+    },
+    selectedLocationInfo: {
+      flex: 1,
+    },
+    selectedLocationText: {
       fontSize: 16,
       color: theme.colors.text.primary,
-      fontWeight: '500',
+      fontWeight: '600',
+    },
+    selectedLocationSubtext: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      marginTop: 2,
+      textTransform: 'capitalize',
+    },
+    locationSelectorPlaceholder: {
+      fontSize: 16,
+      color: theme.colors.text.muted,
+      fontStyle: 'italic',
     },
     inputIcon: {
       marginRight: 8,
@@ -837,60 +1001,118 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     dropdownIcon: {
       marginLeft: 8,
     },
-    dropdownList: {
-      position: 'absolute',
-      top: '100%',
-      left: 0,
-      right: 0,
-      borderWidth: 2,
-      borderColor: theme.colors.primary + '30',
-      borderRadius: 12,
-      marginTop: 4,
-      maxHeight: 200,
-      zIndex: 999999,
-      elevation: 999999,
+    locationModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+    locationModalContent: {
       backgroundColor: theme.colors.background,
+      borderRadius: 16,
+      width: '100%',
+      maxWidth: 400,
+      maxHeight: '80%',
+      elevation: 10,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
     },
-    dropdownItem: {
-      paddingHorizontal: 16,
-      paddingVertical: 14,
+    locationModalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border + '50',
+      borderBottomColor: theme.colors.border,
     },
-    dropdownItemContent: {
+    locationModalTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.colors.text.primary,
+    },
+    locationModalCloseButton: {
+      padding: 8,
+      borderRadius: 20,
+      backgroundColor: theme.colors.backgroundSecondary,
+    },
+    locationSearchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.backgroundSecondary,
+    },
+    locationSearchInput: {
+      flex: 1,
+      fontSize: 16,
+      color: theme.colors.text.primary,
+      marginLeft: 12,
+      paddingVertical: 8,
+    },
+    locationList: {
+      flex: 1,
+    },
+    locationItem: {
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border + '30',
+    },
+    locationItemContent: {
       flexDirection: 'row',
       alignItems: 'center',
     },
-    dropdownItemIcon: {
-      fontSize: 20,
+    locationItemIconContainer: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: theme.colors.primary + '20',
+      justifyContent: 'center',
+      alignItems: 'center',
       marginRight: 12,
     },
-    dropdownItemTextContainer: {
+    locationItemIcon: {
+      fontSize: 18,
+    },
+    locationItemTextContainer: {
       flex: 1,
     },
-    dropdownItemText: {
+    locationItemName: {
       fontSize: 16,
+      fontWeight: '600',
       color: theme.colors.text.primary,
-      fontWeight: '500',
     },
-    dropdownItemType: {
+    locationItemType: {
       fontSize: 12,
-      color: theme.colors.text.muted,
+      color: theme.colors.text.secondary,
       marginTop: 2,
       textTransform: 'capitalize',
     },
-    noResultsContainer: {
-      padding: 20,
+    locationItemAddress: {
+      fontSize: 11,
+      color: theme.colors.text.muted,
+      marginTop: 2,
+    },
+    noLocationsContainer: {
+      padding: 40,
       alignItems: 'center',
     },
-    noResultsText: {
+    noLocationsText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text.secondary,
+      marginTop: 12,
+    },
+    noLocationsSubtext: {
       fontSize: 14,
       color: theme.colors.text.muted,
-      fontStyle: 'italic',
+      marginTop: 4,
     },
     dateContainer: {
       borderWidth: 2,
@@ -1057,6 +1279,69 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
     },
     disabledButton: {
       backgroundColor: theme.colors.text.muted,
+      opacity: 0.6,
+    },
+    submitButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    lotSelectionButton: {
+      justifyContent: 'center',
+      minHeight: 56,
+    },
+    lotSelectionButtonSelected: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primary + '10',
+    },
+    lotSelectionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    selectedLotInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    lotIconContainer: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: theme.colors.primary + '20',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    selectedLotTextContainer: {
+      flex: 1,
+    },
+    selectedLotText: {
+      fontSize: 16,
+      color: theme.colors.text.primary,
+      fontWeight: '600',
+    },
+    selectedLotSubtext: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      marginTop: 2,
+    },
+    lotSelectionPlaceholderContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    lotSelectionPlaceholder: {
+      fontSize: 16,
+      color: theme.colors.text.muted,
+      fontStyle: 'italic',
+      marginLeft: 8,
+    },
+    availableQuantityText: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      marginTop: 4,
+      fontStyle: 'italic',
     },
   });
 
@@ -1128,19 +1413,33 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
                   )}
                   
                   {currentStep < steps.length - 1 ? (
-                    <TouchableOpacity 
-                      style={[styles.button, styles.nextButton]} 
+                    <TouchableOpacity
+                      style={[styles.button, styles.nextButton]}
                       onPress={handleNextStep}
+                      activeOpacity={0.8}
                     >
                       <Text style={styles.nextButtonText}>Next →</Text>
                     </TouchableOpacity>
                   ) : (
-                    <TouchableOpacity 
-                      style={[styles.button, styles.submitButton, !canTransferProduct && styles.disabledButton]} 
+                    <TouchableOpacity
+                      style={[
+                        styles.button,
+                        styles.submitButton,
+                        (!canTransferProduct || loading) && styles.disabledButton
+                      ]}
                       onPress={handleSubmit}
-                      disabled={!canTransferProduct}
+                      disabled={!canTransferProduct || loading}
+                      activeOpacity={0.8}
                     >
-                      <Text style={styles.submitButtonText}>🚀 Transfer Product</Text>
+                      <View style={styles.submitButtonContent}>
+                        {loading ? (
+                          <>
+                            <Text style={styles.submitButtonText}>Creating Transfer...</Text>
+                          </>
+                        ) : (
+                          <Text style={styles.submitButtonText}>🚀 Transfer Product</Text>
+                        )}
+                      </View>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1149,6 +1448,15 @@ export default function TransferForm({ visible, onClose, onSubmit, product, loca
           </TouchableWithoutFeedback>
         </Animated.View>
       </TouchableWithoutFeedback>
+
+      {/* Lot Selection Modal */}
+      <LotSelectionModal
+        visible={showLotSelection}
+        onClose={() => setShowLotSelection(false)}
+        onSelectLot={handleLotSelection}
+        productId={parseInt(product?.id || '0')}
+        productName={product?.name || ''}
+      />
     </Modal>
   );
 }
