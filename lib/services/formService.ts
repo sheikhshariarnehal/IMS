@@ -246,6 +246,110 @@ export class FormService {
     }
   }
 
+  static async addStockToExistingProduct(
+    productId: number,
+    stockData: ProductFormData,
+    userId: number
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      await this.ensureUserContext(userId);
+
+      // First, get the existing product to get the next lot number
+      const { data: existingProduct, error: productError } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', productId)
+        .single();
+
+      if (productError || !existingProduct) {
+        return { success: false, error: 'Product not found' };
+      }
+
+      // Get the highest lot number for this product to generate the next one
+      const { data: existingLots, error: lotsError } = await supabase
+        .from('products_lot')
+        .select('lot_number')
+        .eq('product_id', productId)
+        .order('lot_number', { ascending: false })
+        .limit(1);
+
+      if (lotsError) {
+        console.error('Error fetching existing lots:', lotsError);
+        return { success: false, error: 'Failed to fetch existing lots' };
+      }
+
+      // Generate next lot number
+      let nextLotNumber = 1;
+      if (existingLots && existingLots.length > 0) {
+        nextLotNumber = existingLots[0].lot_number + 1;
+      }
+
+      // Create new product lot
+      const lotData = {
+        product_id: productId,
+        lot_number: nextLotNumber,
+        purchase_price: stockData.purchase_price || 0,
+        selling_price: stockData.selling_price || 0,
+        quantity: stockData.current_stock || 0,
+        supplier_id: stockData.supplier_id || existingProduct.supplier_id,
+        location_id: stockData.location_id || existingProduct.location_id,
+        received_date: new Date().toISOString(),
+      };
+
+      const { data: newLot, error: lotError } = await supabase
+        .from('products_lot')
+        .insert([lotData])
+        .select()
+        .single();
+
+      if (lotError) {
+        console.error('Error creating product lot:', lotError);
+        return { success: false, error: lotError.message };
+      }
+
+      // Update the product's current stock and other relevant fields
+      const updateData = {
+        current_stock: (existingProduct.current_stock || 0) + (stockData.current_stock || 0),
+        total_purchased: (existingProduct.total_purchased || 0) + (stockData.current_stock || 0),
+        updated_at: new Date().toISOString(),
+      };
+
+      // Only update fields that are provided in stockData
+      if (stockData.purchase_price !== undefined) {
+        updateData.purchase_price = stockData.purchase_price;
+      }
+      if (stockData.selling_price !== undefined) {
+        updateData.selling_price = stockData.selling_price;
+      }
+      if (stockData.per_meter_price !== undefined) {
+        updateData.per_meter_price = stockData.per_meter_price;
+      }
+
+      const { data: updatedProduct, error: updateError } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating product:', updateError);
+        return { success: false, error: updateError.message };
+      }
+
+      return {
+        success: true,
+        data: {
+          ...updatedProduct,
+          lot: newLot
+        }
+      };
+    } catch (error) {
+      console.error('Error adding stock to existing product:', error);
+      return { success: false, error: 'Failed to add stock to existing product' };
+    }
+  }
+
   // Customer Operations
   static async createCustomer(data: CustomerFormData, userId: number): Promise<{ success: boolean; data?: Customer; error?: string }> {
     try {
@@ -433,7 +537,15 @@ export class FormService {
     try {
       await this.ensureUserContext();
 
-      let query = supabase.from('sales_summary').select('*');
+      // Query the sales table directly with joins to get all needed fields
+      let query = supabase
+        .from('sales')
+        .select(`
+          *,
+          customers(name, phone, email),
+          locations(name),
+          users(name)
+        `);
 
       if (filters?.startDate) {
         query = query.gte('created_at', filters.startDate);
@@ -455,7 +567,19 @@ export class FormService {
         console.error('Error fetching sales summary:', error);
         return [];
       }
-      return data || [];
+
+      // Transform the data to match expected format
+      return (data || []).map((sale: any) => ({
+        ...sale,
+        customer_name: sale.customers?.name || 'Unknown Customer',
+        customer_phone: sale.customers?.phone || '',
+        customer_email: sale.customers?.email || '',
+        location_name: sale.locations?.name || 'Unknown Location',
+        created_by_name: sale.users?.name || 'Unknown User',
+        sale_date: sale.created_at,
+        discount_amount: sale.discount_amount || 0,
+        tax_amount: sale.tax_amount || 0
+      }));
     } catch (error) {
       console.error('Error fetching sales summary:', error);
       return [];

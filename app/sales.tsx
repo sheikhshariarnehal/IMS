@@ -317,8 +317,8 @@ export default function SalesPage() {
       // Load sales summary
       const salesData = await FormService.getSalesSummary(filters);
       setSales(salesData.map((sale: any) => ({
-        id: sale.id.toString(),
-        saleNumber: sale.sale_number,
+        id: sale.id?.toString() || '',
+        saleNumber: sale.sale_number || '',
         customerId: sale.customer_id?.toString() || '',
         customerName: sale.customer_name || 'Unknown',
         amount: parseFloat(sale.total_amount || '0'),
@@ -335,43 +335,48 @@ export default function SalesPage() {
         createdBy: sale.created_by_name || 'Unknown',
         // Add missing required fields with defaults
         items: [],
-        subtotal: parseFloat(sale.total_amount || '0'),
+        subtotal: parseFloat(sale.subtotal || sale.total_amount || '0'),
         discountAmount: parseFloat(sale.discount_amount || '0'),
-        discountPercentage: 0,
-        taxAmount: 0,
-        taxPercentage: 0,
+        discountPercentage: sale.discount_amount && sale.subtotal ?
+          (parseFloat(sale.discount_amount) / parseFloat(sale.subtotal)) * 100 : 0,
+        taxAmount: parseFloat(sale.tax_amount || '0'),
+        taxPercentage: sale.tax_amount && sale.subtotal ?
+          (parseFloat(sale.tax_amount) / parseFloat(sale.subtotal)) * 100 : 0,
         totalAmount: parseFloat(sale.total_amount || '0'),
-        paymentMethod: 'Cash',
+        paymentMethod: sale.payment_method === 'cash' ? 'Cash' :
+                      sale.payment_method === 'card' ? 'Credit Card' :
+                      sale.payment_method === 'bank_transfer' ? 'Bank Transfer' :
+                      sale.payment_method === 'mobile_banking' ? 'Mobile Banking' : 'Cash',
         dueDate: sale.due_date ? new Date(sale.due_date) : new Date(),
         remainingAmount: parseFloat(sale.due_amount || '0'),
         notes: '',
-        deliveryPerson: '',
-        deliveryPhoto: ''
+        deliveryPerson: sale.delivery_person || '',
+        deliveryPhoto: sale.delivery_photo || ''
       })));
 
       // Load due payments
       const duePaymentsData = await FormService.getDuePaymentsSummary();
       setDuePayments(duePaymentsData.map((payment: any) => ({
-        id: payment.sale_id.toString(),
-        saleId: payment.sale_id.toString(),
-        customerId: payment.customer_id?.toString() || '',
-        customerName: payment.customer_name || 'Unknown',
-        customerPhone: payment.customer_phone || '',
-        saleNumber: payment.sale_number,
-        invoiceNumber: payment.sale_number,
-        totalAmount: parseFloat(payment.total_amount || '0'),
-        originalAmount: parseFloat(payment.total_amount || '0'),
-        paidAmount: parseFloat(payment.paid_amount || '0'),
-        dueAmount: parseFloat(payment.due_amount || '0'),
-        remainingAmount: parseFloat(payment.due_amount || '0'),
-        dueDate: payment.due_date ? new Date(payment.due_date) : new Date(),
-        status: payment.payment_status === 'overdue' ? 'Overdue' : 'Due',
-        daysOverdue: payment.days_overdue || 0,
-        daysPastDue: payment.days_overdue || 0,
+        id: payment.id?.toString() || '',
+        saleId: payment.saleId?.toString() || payment.id?.toString() || '',
+        customerId: payment.customerId?.toString() || '',
+        customerName: payment.customerName || 'Unknown',
+        customerPhone: payment.customerPhone || '',
+        saleNumber: payment.saleNumber || '',
+        invoiceNumber: payment.saleNumber || '',
+        totalAmount: parseFloat(payment.originalAmount || '0'),
+        originalAmount: parseFloat(payment.originalAmount || '0'),
+        paidAmount: parseFloat(payment.paidAmount || '0'),
+        dueAmount: parseFloat(payment.dueAmount || '0'),
+        remainingAmount: parseFloat(payment.dueAmount || '0'),
+        dueDate: payment.dueDate ? new Date(payment.dueDate) : new Date(),
+        status: payment.status === 'overdue' ? 'Overdue' : 'Due',
+        daysOverdue: payment.daysPastDue || 0,
+        daysPastDue: payment.daysPastDue || 0,
         isRedListed: false,
         reminderCount: 0,
-        createdAt: new Date(payment.created_at || Date.now()),
-        lastPaymentDate: new Date(payment.created_at || Date.now()),
+        createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(),
+        lastPaymentDate: payment.updatedAt ? new Date(payment.updatedAt) : new Date(),
         paymentHistory: []
       })));
 
@@ -508,9 +513,9 @@ export default function SalesPage() {
   };
 
   const renderKPICards = () => {
-    const totalSalesAmount = salesStats?.total_revenue || 0;
-    const totalDueAmount = salesStats?.pending_payments || 0;
-    const overduePayments = salesStats?.overdue_payments || 0;
+    const totalSalesAmount = salesStats?.totalRevenue?.value || 0;
+    const totalDueAmount = salesStats?.pendingAmount?.value || 0;
+    const overduePayments = salesStats?.overdueAmount?.value || 0;
     const redListCustomersCount = redListCustomers.length;
 
     return (
