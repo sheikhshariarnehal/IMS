@@ -540,6 +540,10 @@ export default function SalesPage() {
           );
           break;
         case 'cancel':
+          if (!hasPermission('sales', 'delete')) {
+            Alert.alert('Permission Denied', 'You do not have permission to cancel sales.');
+            return;
+          }
           Alert.alert(
             'Cancel Sale',
             `Are you sure you want to cancel ${item.saleNumber}?`,
@@ -795,12 +799,14 @@ export default function SalesPage() {
                 <Edit size={16} color={theme.colors.status.warning} />
               </TouchableOpacity>
               
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: theme.colors.status.error + '20' }]}
-                onPress={() => handleAction('cancel', item)}
-              >
-                <XCircle size={16} color={theme.colors.status.error} />
-              </TouchableOpacity>
+              {hasPermission('sales', 'delete') && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.colors.status.error + '20' }]}
+                  onPress={() => handleAction('cancel', item)}
+                >
+                  <XCircle size={16} color={theme.colors.status.error} />
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>

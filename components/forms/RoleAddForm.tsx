@@ -422,8 +422,12 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
         email: formData.email.trim(),
         password: formData.password,
         role: formData.role.toLowerCase().replace(' ', '_') as 'super_admin' | 'admin' | 'sales_manager' | 'investor',
-        assigned_location_id: formData.locations.length > 0 ? parseInt(formData.locations[0]) : undefined,
+        assigned_location_id: formData.role === 'Sales Manager' && formData.locations.length > 0 ? parseInt(formData.locations[0]) : undefined,
         phone: formData.mobileNumber?.trim() || undefined,
+        // For admins, store multiple locations in permissions
+        permissions: formData.role === 'Admin' && formData.locations.length > 0 ? {
+          locations: formData.locations.map(id => parseInt(id))
+        } : undefined,
       };
 
       // Get current user from auth context

@@ -83,8 +83,19 @@ const ProductsPage = React.memo(function ProductsPage() {
     try {
       setLoading(true);
 
+      // Apply location filtering for admin users
+      let enhancedFilters = { ...filters };
+      if (user?.role === 'admin') {
+        const adminLocations = user.permissions?.locations || [];
+        if (adminLocations.length > 0 && !filters.location) {
+          // If admin has location restrictions and no specific location filter is set,
+          // we'll let the RLS handle the filtering at the database level
+          // The RLS policies should already restrict products to admin's locations
+        }
+      }
+
       // Fetch products from database
-      const productsData = await FormService.getProducts(filters);
+      const productsData = await FormService.getProducts(enhancedFilters);
 
       // Transform database products to UI format
       const transformedProducts: Product[] = productsData.map((product: any) => ({

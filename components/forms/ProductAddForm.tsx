@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -693,6 +693,11 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
 
   const canAddProduct = hasPermission('products', 'add');
 
+  // Check if user can add products to specific location
+  const canAddProductToLocation = useCallback((locationId: string) => {
+    return hasPermission('products', 'add', locationId);
+  }, [hasPermission]);
+
   const generateProductCode = (name: string): string => {
     const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     const timestamp = Date.now().toString().slice(-4);
@@ -805,9 +810,18 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
           FormService.getExistingProducts()
         ]);
 
+        // Filter locations based on admin permissions
+        let filteredLocations = locationsData;
+        if (user?.role === 'admin') {
+          const adminLocations = user.permissions?.locations || [];
+          filteredLocations = locationsData.filter(location =>
+            adminLocations.includes(location.id)
+          );
+        }
+
         setCategories(categoriesData);
         setSuppliers(suppliersData);
-        setLocations(locationsData);
+        setLocations(filteredLocations);
         setExistingProducts(existingProductsData);
 
         console.log('Loaded form data:', {
@@ -939,6 +953,14 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
       if (!user?.id) {
         showToast('User not authenticated', 'error');
         return;
+      }
+
+      // Check location-specific permissions for admin users
+      if (user.role === 'admin' && productData.location_id) {
+        if (!canAddProductToLocation(productData.location_id.toString())) {
+          showToast('You do not have permission to add products to this location. Admins can only add products to warehouses they have access to.', 'error');
+          return;
+        }
       }
 
       let result;

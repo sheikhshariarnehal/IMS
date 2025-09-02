@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -94,6 +94,11 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
   const [loading, setLoading] = useState(false);
 
   const canTransferProduct = hasPermission('inventory', 'transfer');
+
+  // Check if user can transfer from specific location
+  const canTransferFromLocation = useCallback((locationId: string) => {
+    return hasPermission('inventory', 'transfer', locationId);
+  }, [hasPermission]);
 
   // Form steps for better UX
   const steps = [
@@ -264,6 +269,14 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     if (!user?.id) {
       Alert.alert('Error', 'User not authenticated');
       return;
+    }
+
+    // Check location-specific permissions for admin users
+    if (user.role === 'admin') {
+      if (!canTransferFromLocation(formData.sourceLocationId)) {
+        Alert.alert('Permission Denied', 'You do not have permission to transfer products from this location. Admins can only transfer from warehouses they have access to.');
+        return;
+      }
     }
 
     setLoading(true);

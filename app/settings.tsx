@@ -53,6 +53,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import SharedLayout from '@/components/SharedLayout';
 import RoleAddForm from '@/components/forms/RoleAddForm';
+import AdminPermissionTester from '@/components/AdminPermissionTester';
 // Mock interfaces for UI demo
 interface UserProfile {
   id: string;
@@ -161,7 +162,7 @@ export default function SettingsPage() {
     const { theme, isDark, toggleTheme } = useTheme();
     const { user, hasPermission } = useAuth();
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<'role-management' | 'account' | 'appearance' | 'system'>('account');
+    const [activeTab, setActiveTab] = useState<'role-management' | 'account' | 'appearance' | 'system' | 'permissions'>('account');
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [locations, setLocations] = useState<LocationMap>({});
     const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -432,6 +433,21 @@ export default function SettingsPage() {
                         { color: activeTab === 'role-management' ? theme.colors.primary : theme.colors.text.secondary }
                     ]}>
                         Users
+                    </Text>
+                </TouchableOpacity>
+            )}
+
+            {user?.role === 'admin' && (
+                <TouchableOpacity
+                    style={[styles.tab, activeTab === 'permissions' && { borderBottomColor: theme.colors.primary }]}
+                    onPress={() => setActiveTab('permissions')}
+                >
+                    <Shield size={16} color={activeTab === 'permissions' ? theme.colors.primary : theme.colors.text.secondary} />
+                    <Text style={[
+                        styles.tabText,
+                        { color: activeTab === 'permissions' ? theme.colors.primary : theme.colors.text.secondary }
+                    ]}>
+                        Permissions
                     </Text>
                 </TouchableOpacity>
             )}
@@ -1012,6 +1028,8 @@ export default function SettingsPage() {
         switch (activeTab) {
             case 'role-management':
                 return renderRoleManagement();
+            case 'permissions':
+                return <AdminPermissionTester />;
             case 'account':
                 return renderAccountSettings();
             case 'appearance':

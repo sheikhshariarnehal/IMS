@@ -459,6 +459,8 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, steps, theme
 );
 
 export default function CustomerAddForm({ visible, onClose, onSubmit, existingCustomer }: CustomerAddFormProps) {
+  console.log('🔍 CustomerAddForm rendered with visible:', visible);
+
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
   const { showToast } = useToast();
@@ -583,14 +585,19 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    console.log('🔍 Validating form with data:', formData);
+
     // Validate all fields
     Object.keys(formData).forEach((field) => {
-      const error = validateField(field as keyof CustomerFormData, formData[field as keyof CustomerFormData]);
+      const value = formData[field as keyof CustomerFormData];
+      const error = validateField(field as keyof CustomerFormData, value);
+      console.log(`🔍 Field ${field}: value="${value}", error="${error}"`);
       if (error) {
         newErrors[field] = error;
       }
     });
 
+    console.log('🔍 Validation errors:', newErrors);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -607,16 +614,25 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
   };
 
   const onSubmitForm = async () => {
+    console.log('🔍 CustomerAddForm submission started');
+    console.log('🔍 canAddCustomer:', canAddCustomer);
+    console.log('🔍 formData:', formData);
+
     if (!canAddCustomer) {
+      console.log('❌ Permission denied for adding customers');
       showToast('You do not have permission to add customers', 'error');
       return;
     }
 
-    if (!validateForm()) {
+    const isValid = validateForm();
+    console.log('🔍 Form validation result:', isValid);
+    if (!isValid) {
+      console.log('❌ Form validation failed');
       showToast('Please fill in all required fields correctly', 'warning');
       return;
     }
 
+    console.log('✅ Starting customer creation...');
     setIsSubmitting(true);
     try {
       // Prepare customer data for Supabase
@@ -638,7 +654,9 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
       }
 
       // Create customer using FormService
+      console.log('🔄 Calling FormService.createCustomer with:', customerData);
       const result = await FormService.createCustomer(customerData, user.id);
+      console.log('📊 FormService result:', result);
 
       if (result.success && result.data) {
         // Show success animation
@@ -984,7 +1002,10 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
                         styles.submitButton,
                         isSubmitting && styles.submitButtonDisabled
                       ]}
-                      onPress={onSubmitForm}
+                      onPress={() => {
+                        console.log('🔴 Submit button pressed!');
+                        onSubmitForm();
+                      }}
                       disabled={isSubmitting}
                     >
                       {isSubmitting ? (

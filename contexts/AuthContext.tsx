@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useMe
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SafeStorage from '../utils/safeStorage';
 import { supabase, setUserContext, clearUserContext, testAuth, User } from '../lib/supabase';
+import { useLocations } from './LocationContext';
 
 // Check if we're in demo mode or web environment
 const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
@@ -96,6 +97,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  refreshUserData: () => Promise<void>;
   hasPermission: (module: string, action?: string, locationId?: string) => boolean;
   isRole: (role: string) => boolean;
   canAccessLocation: (locationId: string | number) => boolean;
@@ -147,6 +149,7 @@ const hashPassword = async (password: string): Promise<string> => {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { isWarehouse, isShowroom } = useLocations();
 
   // Load user session on app start
   useEffect(() => {
@@ -166,6 +169,177 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   };
+
+  // Admin permission logic based on location types and access rules
+  const hasAdminPermission = useCallback((module: string, action: string, locationId?: string): boolean => {
+    console.log('🔍 Admin Permission Check:', {
+      module,
+      action,
+      locationId,
+      userRole: user?.role,
+      adminLocations: user?.permissions?.locations,
+      fullPermissions: user?.permissions
+    });
+
+    if (!user || user.role !== 'admin') {
+      console.log('❌ Not admin user');
+      return false;
+    }
+
+    // Get admin's assigned locations from permissions
+    const adminLocations = user.permissions?.locations || [];
+    if (adminLocations.length === 0) {
+      console.log('❌ No admin locations assigned - this might be due to old session data');
+      console.log('💡 Try logging out and logging back in to refresh permissions');
+      return false;
+    }
+
+    // If no specific location is provided, check if admin has any relevant location access
+    if (!locationId) {
+      const result = checkAdminModuleAccess(module, action, adminLocations);
+      console.log('✅ Admin permission result (no location):', result);
+      return result;
+    }
+
+    // Convert locationId to number for comparison
+    const locationIdNum = typeof locationId === 'string' ? parseInt(locationId) : locationId;
+
+    // Check if admin has access to this specific location
+    if (!adminLocations.includes(locationIdNum)) {
+      console.log('❌ Admin does not have access to location:', locationIdNum);
+      return false;
+    }
+
+    // Check module and action permissions based on location type and admin rules
+    const result = checkAdminModuleAccess(module, action, adminLocations, locationIdNum);
+    console.log('✅ Admin permission result (with location):', result);
+    return result;
+  }, [user]);
+
+  // Helper function to check admin module access based on business rules
+  const checkAdminModuleAccess = useCallback((module: string, action: string, adminLocations: number[], specificLocationId?: number): boolean => {
+    // Admin access rules based on your requirements:
+
+    // 1. Admins CANNOT delete anything
+    if (action === 'delete' || action === 'remove') return false;
+
+    // 2. Admins CANNOT create new admins or manage higher-level roles
+    if (module === 'users' && (action === 'add' || action === 'create')) return false;
+
+    // 3. Module-specific permissions based on location types
+    switch (module.toLowerCase()) {
+      case 'products':
+        // Can add products only if they have warehouse access
+        if (action === 'add' || action === 'create') {
+          return hasWarehouseAccess(adminLocations, specificLocationId);
+        }
+        // Can view/edit products in any assigned location
+        return action === 'view' || action === 'edit';
+
+      case 'inventory':
+        // Can transfer products only if they have warehouse access
+        if (action === 'transfer') {
+          return hasWarehouseAccess(adminLocations, specificLocationId);
+        }
+        // Can view/add/edit inventory in any assigned location
+        return ['view', 'add', 'edit'].includes(action);
+
+      case 'sales':
+        // Can sell products only if they have showroom access
+        if (action === 'add' || action === 'create') {
+          return hasShowroomAccess(adminLocations, specificLocationId);
+        }
+        // Can view/edit sales in any assigned location
+        return action === 'view' || action === 'edit';
+
+      case 'customers':
+      case 'suppliers':
+      case 'categories':
+        // Can add/view/edit customers, suppliers, and categories
+        return ['view', 'add', 'create', 'edit'].includes(action);
+
+      case 'reports':
+        // Can view and export reports for their assigned locations
+        return action === 'view' || action === 'export';
+
+      case 'dashboard':
+        // Can view dashboard
+        return action === 'view';
+
+      default:
+        // For other modules, allow view and edit but not add/delete
+        return action === 'view' || action === 'edit';
+    }
+  }, []);
+
+  // Helper function to check if admin has warehouse access
+  const hasWarehouseAccess = useCallback((adminLocations: number[], specificLocationId?: number): boolean => {
+    console.log('🏭 Checking warehouse access:', { adminLocations, specificLocationId });
+    console.log('🏭 isWarehouse function available:', typeof isWarehouse);
+
+    // Fallback: Known warehouse IDs based on database data
+    const knownWarehouses = [1, 3]; // Main Warehouse, Chittagong Warehouse
+
+    if (specificLocationId) {
+      const hasLocation = adminLocations.includes(specificLocationId);
+      // Try LocationContext first, fallback to hardcoded list
+      let isWarehouseLoc = isWarehouse(specificLocationId);
+      if (!isWarehouseLoc) {
+        isWarehouseLoc = knownWarehouses.includes(specificLocationId);
+        console.log(`🏭 Using fallback warehouse check for ${specificLocationId}:`, isWarehouseLoc);
+      }
+      console.log('🏭 Specific location check:', { hasLocation, isWarehouseLoc });
+      return hasLocation && isWarehouseLoc;
+    }
+
+    // Check if admin has access to any warehouse
+    const warehouseAccess = adminLocations.some(locationId => {
+      // Try LocationContext first, fallback to hardcoded list
+      let isWh = isWarehouse(locationId);
+      if (!isWh) {
+        isWh = knownWarehouses.includes(locationId);
+        console.log(`🏭 Using fallback warehouse check for ${locationId}:`, isWh);
+      }
+      console.log(`🏭 Location ${locationId} is warehouse:`, isWh);
+      return isWh;
+    });
+    console.log('🏭 Any warehouse access:', warehouseAccess);
+    return warehouseAccess;
+  }, [isWarehouse]);
+
+  // Helper function to check if admin has showroom access
+  const hasShowroomAccess = useCallback((adminLocations: number[], specificLocationId?: number): boolean => {
+    console.log('🏪 Checking showroom access:', { adminLocations, specificLocationId });
+
+    // Fallback: Known showroom IDs based on database data
+    const knownShowrooms = [2]; // Gulshan Showroom
+
+    if (specificLocationId) {
+      const hasLocation = adminLocations.includes(specificLocationId);
+      // Try LocationContext first, fallback to hardcoded list
+      let isShowroomLoc = isShowroom(specificLocationId);
+      if (!isShowroomLoc) {
+        isShowroomLoc = knownShowrooms.includes(specificLocationId);
+        console.log(`🏪 Using fallback showroom check for ${specificLocationId}:`, isShowroomLoc);
+      }
+      console.log('🏪 Specific location check:', { hasLocation, isShowroomLoc });
+      return hasLocation && isShowroomLoc;
+    }
+
+    // Check if admin has access to any showroom
+    const showroomAccess = adminLocations.some(locationId => {
+      // Try LocationContext first, fallback to hardcoded list
+      let isSh = isShowroom(locationId);
+      if (!isSh) {
+        isSh = knownShowrooms.includes(locationId);
+        console.log(`🏪 Using fallback showroom check for ${locationId}:`, isSh);
+      }
+      console.log(`🏪 Location ${locationId} is showroom:`, isSh);
+      return isSh;
+    });
+    console.log('🏪 Any showroom access:', showroomAccess);
+    return showroomAccess;
+  }, [isShowroom]);
 
   // Optimize auth methods with useCallback
   const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
@@ -223,6 +397,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Create user session
+      console.log('🔍 Raw user data from database:', user);
+      console.log('🔍 User permissions field:', user.permissions);
+
       const userSession: UserSession = {
         id: user.id,
         email: user.email,
@@ -233,6 +410,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         assigned_location_id: user.assigned_location_id,
         loginTime: new Date().toISOString()
       };
+
+      console.log('🔍 Created user session:', userSession);
 
       // Save session
       await storage.setItem('userSession', JSON.stringify(userSession));
@@ -257,6 +436,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Login failed. Please try again.' };
     }
   }, []);
+
+  // Function to refresh user data from database
+  const refreshUserData = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      console.log('🔄 Refreshing user data from database...');
+      const { data: freshUserData, error } = await testAuth(user.email);
+
+      if (error || !freshUserData) {
+        console.error('❌ Failed to refresh user data:', error);
+        return;
+      }
+
+      console.log('✅ Fresh user data:', freshUserData);
+
+      // Update the user session with fresh data
+      const updatedSession: UserSession = {
+        ...user,
+        permissions: freshUserData.permissions || {},
+      };
+
+      console.log('✅ Updated session:', updatedSession);
+
+      // Save updated session
+      await storage.setItem('userSession', JSON.stringify(updatedSession));
+      setUser(updatedSession);
+
+    } catch (error) {
+      console.error('❌ Error refreshing user data:', error);
+    }
+  }, [user]);
 
   const logout = useCallback(async () => {
     try {
@@ -290,10 +501,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Super admin has all permissions
     if (user.role === 'super_admin') return true;
 
+    // Admin role-specific logic
+    if (user.role === 'admin') {
+      return hasAdminPermission(module, action, locationId);
+    }
+
+    // Sales Manager and Investor logic (existing)
     const modulePermissions = user.permissions[module.toLowerCase()];
-    
+
     if (!modulePermissions) return false;
-    
+
     // Map action names to permission fields
     const actionMap: Record<string, string> = {
       'view': 'view',
@@ -306,20 +523,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       'remove': 'delete',
       'approve': 'approve'
     };
-    
+
     const permissionField = actionMap[action.toLowerCase()] || action.toLowerCase();
-    
+
     let hasModulePermission = false;
-    
+
     if (typeof modulePermissions === 'boolean') {
       hasModulePermission = modulePermissions;
     } else if (typeof modulePermissions === 'object' && modulePermissions !== null) {
       hasModulePermission = modulePermissions[permissionField] ?? false;
     }
-    
+
     if (!hasModulePermission) return false;
-    
-    // Check location restrictions
+
+    // Check location restrictions for non-admin roles
     if (locationId && user.role !== 'super_admin') {
       // Convert locationId to number for comparison
       const locationIdNum = typeof locationId === 'string' ? parseInt(locationId) : locationId;
@@ -334,7 +551,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return modulePermissions.locationRestrictions.includes(locationIdNum);
       }
     }
-    
+
     return true;
   }, [user]);
 
@@ -390,11 +607,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     logout,
+    refreshUserData,
     hasPermission,
     isRole,
     canAccessLocation,
     getAccessibleLocations,
-  }), [user, isLoading, login, logout, hasPermission, isRole, canAccessLocation, getAccessibleLocations]);
+  }), [user, isLoading, login, logout, refreshUserData, hasPermission, isRole, canAccessLocation, getAccessibleLocations]);
 
   return (
     <AuthContext.Provider value={value}>

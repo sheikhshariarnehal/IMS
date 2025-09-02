@@ -827,25 +827,32 @@ export class FormService {
   // Customer Operations
   static async createCustomer(data: CustomerFormData, userId: number): Promise<{ success: boolean; data?: Customer; error?: string }> {
     try {
+      console.log('🔄 FormService.createCustomer called with:', { data, userId });
       await this.ensureUserContext(userId);
+
+      const insertData = {
+        ...data,
+        created_by: userId,
+      };
+      console.log('🔄 Inserting customer data:', insertData);
 
       const { data: customer, error } = await supabase
         .from('customers')
-        .insert([{
-          ...data,
-          created_by: userId,
-        }])
+        .insert([insertData])
         .select()
         .single();
 
+      console.log('📊 Supabase response:', { customer, error });
+
       if (error) {
-        console.error('Error creating customer:', error);
+        console.error('❌ Error creating customer:', error);
         return { success: false, error: error.message };
       }
 
+      console.log('✅ Customer created successfully:', customer);
       return { success: true, data: customer };
     } catch (error) {
-      console.error('Error creating customer:', error);
+      console.error('❌ Exception in createCustomer:', error);
       return { success: false, error: 'Failed to create customer' };
     }
   }
@@ -1794,6 +1801,7 @@ export class FormService {
         phone: data.phone,
         role: data.role,
         assigned_location_id: data.assigned_location_id,
+        permissions: data.permissions || null,
         password_hash: hashedPassword,
         created_by: userId,
         status: 'active',
@@ -1801,31 +1809,15 @@ export class FormService {
 
       console.log('🔄 Creating user with data:', userData);
 
-      // Try using a direct SQL approach to bypass potential RLS issues
-      const { data: user, error } = await supabase.rpc('create_user_direct', {
-        user_data: userData
-      });
-
-      // If the RPC doesn't exist, fall back to regular insert
-      if (error && error.code === '42883') {
-        console.log('🔄 RPC not found, using regular insert...');
-        const { data: userFallback, error: insertError } = await supabase
-          .from('users')
-          .insert([userData])
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('❌ Error creating user with fallback:', insertError);
-          console.error('❌ Full error details:', JSON.stringify(insertError, null, 2));
-          return { success: false, error: insertError.message };
-        }
-
-        return { success: true, data: userFallback };
-      }
+      // Use direct insert to ensure permissions are properly saved
+      const { data: user, error } = await supabase
+        .from('users')
+        .insert([userData])
+        .select()
+        .single();
 
       if (error) {
-        console.error('❌ Error creating user with RPC:', error);
+        console.error('❌ Error creating user:', error);
         console.error('❌ Full error details:', JSON.stringify(error, null, 2));
         return { success: false, error: error.message };
       }
@@ -1859,6 +1851,7 @@ export class FormService {
         phone: data.phone,
         role: data.role,
         assigned_location_id: data.assigned_location_id,
+        permissions: data.permissions || null,
       };
 
       // Only hash password if it's being updated

@@ -75,6 +75,11 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
   const { showToast } = useToast();
+
+  // Check if user can create sales at specific location
+  const canCreateSaleAtLocation = useCallback((locationId: string) => {
+    return hasPermission('sales', 'add', locationId);
+  }, [hasPermission]);
   const slideAnim = useRef(new Animated.Value(-screenHeight)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -518,6 +523,14 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
       if (!user?.id) {
         showToast('User not authenticated', 'error');
         return;
+      }
+
+      // Check location-specific permissions for admin users
+      if (user.role === 'admin' && selectedProduct?.location_id) {
+        if (!canCreateSaleAtLocation(selectedProduct.location_id)) {
+          showToast('You do not have permission to create sales at this location. Admins can only create sales at showrooms they have access to.', 'error');
+          return;
+        }
       }
 
       // Prepare sale data for Supabase (matching actual database schema)

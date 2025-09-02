@@ -378,10 +378,16 @@ export default function CustomersPage() {
   };
 
   const handleAddCustomer = () => {
+    console.log('🔴 Add Customer button clicked!');
+    console.log('🔍 Customer permission check:', hasPermission('customers', 'add'));
+
     if (!hasPermission('customers', 'add')) {
+      console.log('❌ Permission denied for adding customers');
       Alert.alert('Permission Denied', 'You do not have permission to add customers.');
       return;
     }
+
+    console.log('✅ Opening customer form...');
     setShowCustomerForm(true);
   };
 

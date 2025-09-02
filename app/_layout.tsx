@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar'
 import { LogBox } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { LocationProvider } from '@/contexts/LocationContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { PerformanceProvider } from '@/contexts/PerformanceContext';
 import { ToastProvider } from '@/contexts/ToastContext';
@@ -40,38 +41,40 @@ export default function RootLayout() {
         <PerformanceProvider>
           <ThemeProvider>
             <ToastProvider>
-              <AuthProvider>
-              <Stack screenOptions={{
-                headerShown: false,
-                animation: 'none',
-                animationDuration: 0,
-                gestureEnabled: false,
-                animationTypeForReplace: 'push',
-              }}>
-                <Stack.Screen name="(auth)" options={{ headerShown: false, animation: 'none' }} />
-                <Stack.Screen name="dashboard" options={{ animation: 'none' }} />
-                <Stack.Screen name="search" options={{ animation: 'none' }} />
-                <Stack.Screen name="products" options={{ animation: 'none' }} />
-                <Stack.Screen name="history" options={{ animation: 'none' }} />
-                <Stack.Screen name="inventory" options={{ animation: 'none' }} />
-                <Stack.Screen name="sales" options={{ animation: 'none' }} />
-                <Stack.Screen name="customers" options={{ animation: 'none' }} />
-                <Stack.Screen name="suppliers" options={{ animation: 'none' }} />
-                <Stack.Screen name="notification" options={{ animation: 'none' }} />
-                <Stack.Screen name="settings" options={{ animation: 'none' }} />
-                <Stack.Screen name="reports" options={{ animation: 'none' }} />
-                <Stack.Screen name="samples" options={{ animation: 'none' }} />
-                <Stack.Screen name="logs" options={{ animation: 'none' }} />
-                <Stack.Screen name="support" options={{ animation: 'none' }} />
-                <Stack.Screen name="transfer" options={{ animation: 'none' }} />
-                <Stack.Screen name="categories" options={{ animation: 'none' }} />
+              <LocationProvider>
+                <AuthProvider>
+                  <Stack screenOptions={{
+                    headerShown: false,
+                    animation: 'none',
+                    animationDuration: 0,
+                    gestureEnabled: false,
+                    animationTypeForReplace: 'push',
+                  }}>
+                    <Stack.Screen name="(auth)" options={{ headerShown: false, animation: 'none' }} />
+                    <Stack.Screen name="dashboard" options={{ animation: 'none' }} />
+                    <Stack.Screen name="search" options={{ animation: 'none' }} />
+                    <Stack.Screen name="products" options={{ animation: 'none' }} />
+                    <Stack.Screen name="history" options={{ animation: 'none' }} />
+                    <Stack.Screen name="inventory" options={{ animation: 'none' }} />
+                    <Stack.Screen name="sales" options={{ animation: 'none' }} />
+                    <Stack.Screen name="customers" options={{ animation: 'none' }} />
+                    <Stack.Screen name="suppliers" options={{ animation: 'none' }} />
+                    <Stack.Screen name="notification" options={{ animation: 'none' }} />
+                    <Stack.Screen name="settings" options={{ animation: 'none' }} />
+                    <Stack.Screen name="reports" options={{ animation: 'none' }} />
+                    <Stack.Screen name="samples" options={{ animation: 'none' }} />
+                    <Stack.Screen name="logs" options={{ animation: 'none' }} />
+                    <Stack.Screen name="support" options={{ animation: 'none' }} />
+                    <Stack.Screen name="transfer" options={{ animation: 'none' }} />
+                    <Stack.Screen name="categories" options={{ animation: 'none' }} />
 
-                <Stack.Screen name="+not-found" options={{ animation: 'none' }} />
-              </Stack>
+                    <Stack.Screen name="+not-found" options={{ animation: 'none' }} />
+                  </Stack>
 
-              {/* Performance Monitor - Temporarily disabled to avoid theme errors */}
-              {/* {shouldShowVisualMonitor() && <PerformanceMonitor />} */}
-              </AuthProvider>
+                  {/* Performance Monitor - Temporarily disabled to avoid theme errors */}
+                  {/* {shouldShowVisualMonitor() && <PerformanceMonitor />} */}
+                </AuthProvider>
+              </LocationProvider>
             </ToastProvider>
           </ThemeProvider>
         </PerformanceProvider>
