@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">Serrano Tex</string>
+  <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
+</resources>

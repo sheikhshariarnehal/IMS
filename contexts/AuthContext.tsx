@@ -105,6 +105,44 @@ interface AuthContextType {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Password hashing function (same as in formService.ts)
+const hashPassword = async (password: string): Promise<string> => {
+  try {
+    // Try to use expo-crypto for React Native
+    const { digestStringAsync, CryptoDigestAlgorithm } = await import('expo-crypto');
+    const saltedPassword = password + 'salt_key_2024';
+    const hash = await digestStringAsync(CryptoDigestAlgorithm.SHA256, saltedPassword);
+    return hash;
+  } catch (error) {
+    console.log('Expo crypto not available, trying web crypto...');
+
+    // Check if we're in a web environment
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password + 'salt_key_2024');
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (webError) {
+        console.warn('Web Crypto API failed, falling back to simple hash');
+      }
+    }
+
+    // Fallback for environments without crypto support
+    let hash = 0;
+    const saltedPassword = password + 'salt_key_2024';
+
+    for (let i = 0; i < saltedPassword.length; i++) {
+      const char = saltedPassword.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+
+    return Math.abs(hash).toString(16);
+  }
+};
+
 // Auth provider component
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserSession | null>(null);
@@ -147,14 +185,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = testResult.data;
 
-      // Simple password check for demo (use proper hashing in production)
+      // Password validation
       let isPasswordValid = false;
 
-      // Check password based on user email
+      // Check password based on user email and stored hash
       if (user.email === 'admin@serranotex.com' && password === 'admin123') {
         isPasswordValid = true;
       } else if (user.email !== 'admin@serranotex.com' && password === 'password') {
         isPasswordValid = true;
+      } else if (user.password_hash) {
+        // For users with stored password hash, validate against the hash
+        const hashedInputPassword = await hashPassword(password);
+        isPasswordValid = hashedInputPassword === user.password_hash;
+        console.log('Hash comparison:', {
+          inputHash: hashedInputPassword,
+          storedHash: user.password_hash,
+          match: isPasswordValid
+        });
       }
 
       if (!isPasswordValid) {

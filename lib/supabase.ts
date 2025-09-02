@@ -148,7 +148,7 @@ export const testAuth = async (email: string): Promise<{ data: User | null; erro
     // Production mode: Connect to Supabase
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, role, status, permissions, assigned_location_id, can_add_sales_managers, profile_picture, last_login, created_at, updated_at')
+      .select('id, name, email, role, status, permissions, assigned_location_id, can_add_sales_managers, profile_picture, last_login, created_at, updated_at, password_hash')
       .eq('email', email)
       .eq('status', 'active')
       .single();
@@ -177,6 +177,7 @@ export interface User {
   last_login?: string;
   created_at: string;
   updated_at: string;
+  password_hash?: string;
 }
 
 export interface Product {

@@ -423,10 +423,24 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
     // Load lots for the selected product
     try {
       console.log('🔍 SalesForm: Loading lots for product:', product.name, 'ID:', product.id);
-      const productLots = await FormService.getProductLots(product.id);
-      console.log('🔍 SalesForm: Received lots:', productLots);
-      setLots(productLots);
-      console.log(`✅ SalesForm: Loaded ${productLots.length} lots for product ${product.name}`);
+      const response = await FormService.getProductLots(product.id);
+      console.log('🔍 SalesForm: Received response:', response);
+
+      // Handle the response structure { success, data, error }
+      if (response && typeof response === 'object' && 'success' in response) {
+        if (response.success && response.data) {
+          setLots(response.data);
+          console.log(`✅ SalesForm: Loaded ${response.data.length} lots for product ${product.name}`);
+        } else {
+          console.error('❌ SalesForm: Failed to load lots:', response.error);
+          setLots([]);
+        }
+      } else {
+        // Handle direct array response (fallback for older method)
+        const productLots = Array.isArray(response) ? response : [];
+        setLots(productLots);
+        console.log(`✅ SalesForm: Loaded ${productLots.length} lots for product ${product.name}`);
+      }
     } catch (error) {
       console.error('❌ SalesForm: Error loading product lots:', error);
       setLots([]);
@@ -818,7 +832,10 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
   // Render lot selection dropdown
   const renderLotDropdown = () => {
-    if (!selectedProduct || lots.length === 0) {
+    // Ensure lots is an array and has items
+    const lotsArray = Array.isArray(lots) ? lots : [];
+
+    if (!selectedProduct || lotsArray.length === 0) {
       return (
         <View style={styles.noLotsContainer}>
           <Text style={styles.noLotsText}>No lots available for this product</Text>
@@ -827,7 +844,7 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
     }
 
     // Sort lots by lot number (FIFO - First In, First Out)
-    const sortedLots = [...lots].sort((a, b) => a.lot_number - b.lot_number);
+    const sortedLots = [...lotsArray].sort((a, b) => a.lot_number - b.lot_number);
 
     return (
       <View style={styles.dropdownContainer}>

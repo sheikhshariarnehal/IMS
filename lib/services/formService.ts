@@ -2164,28 +2164,7 @@ export class FormService {
     }
   }
 
-  // Get product lots for selection
-  static async getProductLots(productId: number): Promise<{ success: boolean; data?: any[]; error?: string }> {
-    try {
-      const { data, error } = await supabase
-        .from('products_lot')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('status', 'active')
-        .gt('quantity', 0)
-        .order('lot_number', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching product lots:', error);
-        return { success: false, error: error.message };
-      }
-
-      return { success: true, data: data || [] };
-    } catch (error) {
-      console.error('Error fetching product lots:', error);
-      return { success: false, error: 'Failed to fetch product lots' };
-    }
-  }
+  // Get product lots for selection (using the main getProductLots method above)
 
   // Get locations for transfer
   static async getActiveLocations(): Promise<{ success: boolean; data?: any[]; error?: string }> {
