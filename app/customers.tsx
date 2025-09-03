@@ -649,7 +649,7 @@ export default function CustomersPage() {
             </>
           )}
 
-          {item.outstanding_amount > 0 && (
+          {item.outstanding_amount > 0 && hasPermission('customers', 'edit') && (
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
               onPress={() => handleAction('reminder', item)}

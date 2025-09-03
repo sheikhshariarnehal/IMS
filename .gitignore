@@ -5,3 +5,11 @@
 expo-env.d.ts
 # @end expo-cli
 node_modules
+
+# Expo
+.expo/
+dist/
+
+# Environment files
+.env.local
+.env.production.local

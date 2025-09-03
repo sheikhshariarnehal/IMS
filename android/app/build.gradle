@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.serranotex.app'
+    namespace 'com.serranotex.ims'
     defaultConfig {
-        applicationId 'com.serranotex.app'
+        applicationId 'com.serranotex.ims'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

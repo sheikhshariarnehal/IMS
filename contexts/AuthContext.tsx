@@ -397,6 +397,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Generate default permissions for Investor role
+  const generateInvestorPermissions = useCallback((): UserPermissions => {
+    return {
+      dashboard: true,
+      products: {
+        view: true,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      inventory: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+        transfer: false,
+      },
+      sales: {
+        view: true,
+        add: false,
+        edit: false,
+        delete: false,
+        invoice: false,
+      },
+      customers: {
+        view: true,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      suppliers: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      samples: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      reports: {
+        view: true,
+        export: true,
+      },
+      notifications: {
+        view: false,
+        manage: false,
+      },
+      activityLogs: {
+        view: false,
+      },
+      settings: {
+        view: false,
+        userManagement: false,
+        systemSettings: false,
+      },
+      help: {
+        view: true,
+      },
+    };
+  }, []);
+
   // Optimize auth methods with useCallback
   const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -418,20 +482,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Password validation
       let isPasswordValid = false;
 
-      // Check password based on user email and stored hash
-      if (user.email === 'admin@serranotex.com' && password === 'admin123') {
-        isPasswordValid = true;
-      } else if (user.email !== 'admin@serranotex.com' && password === 'password') {
-        isPasswordValid = true;
-      } else if (user.password_hash) {
-        // For users with stored password hash, validate against the hash
-        const hashedInputPassword = await hashPassword(password);
-        isPasswordValid = hashedInputPassword === user.password_hash;
-        console.log('Hash comparison:', {
-          inputHash: hashedInputPassword,
-          storedHash: user.password_hash,
-          match: isPasswordValid
-        });
+      console.log('🔐 Password validation for user:', user.email);
+      console.log('🔐 User has password_hash:', !!user.password_hash);
+
+      if (user.password_hash) {
+        // Check if it's a bcrypt hash (starts with $2b$)
+        if (user.password_hash.startsWith('$2b$')) {
+          console.log('🔐 Detected bcrypt hash, using fallback for existing users');
+          // For existing users with bcrypt hashes, use demo credentials as fallback
+          if (user.email === 'admin@serranotex.com' && password === 'admin123') {
+            isPasswordValid = true;
+            console.log('🔐 Admin bcrypt fallback login successful');
+          } else if (user.email !== 'admin@serranotex.com' && password === 'password') {
+            isPasswordValid = true;
+            console.log('🔐 User bcrypt fallback login successful');
+          }
+        } else {
+          // For users with SHA256 hashes (newly created users)
+          const hashedInputPassword = await hashPassword(password);
+          isPasswordValid = hashedInputPassword === user.password_hash;
+          console.log('🔐 SHA256 Hash comparison:', {
+            inputPassword: password,
+            inputHash: hashedInputPassword,
+            storedHash: user.password_hash,
+            match: isPasswordValid
+          });
+        }
+      } else {
+        // Fallback for demo users without password hash
+        if (user.email === 'admin@serranotex.com' && password === 'admin123') {
+          isPasswordValid = true;
+          console.log('🔐 Admin demo login successful');
+        } else if (user.email !== 'admin@serranotex.com' && password === 'password') {
+          isPasswordValid = true;
+          console.log('🔐 Demo user login successful');
+        }
       }
 
       if (!isPasswordValid) {
@@ -456,11 +541,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('🔍 Raw user data from database:', user);
       console.log('🔍 User permissions field:', user.permissions);
 
-      // Set default permissions for Sales Manager if none exist
+      // Set default permissions for Sales Manager and Investor if none exist
       let userPermissions = user.permissions || {};
       if (user.role === 'sales_manager' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
         console.log('🔧 Setting default permissions for Sales Manager');
         userPermissions = generateSalesManagerPermissions();
+      } else if (user.role === 'investor' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
+        console.log('🔧 Setting default permissions for Investor');
+        userPermissions = generateInvestorPermissions();
       }
 
       const userSession: UserSession = {
@@ -638,6 +726,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  // Investor permission logic - read-only access to specific modules
+  const hasInvestorPermission = useCallback((module: string, action: string, locationId?: string): boolean => {
+    console.log('💰 Investor Permission Check:', {
+      module,
+      action,
+      locationId,
+      userRole: user?.role,
+      fullUser: user
+    });
+
+    if (!user || user.role !== 'investor') {
+      console.log('❌ Not investor user');
+      return false;
+    }
+
+    // Investors CANNOT perform any modification actions
+    if (['add', 'create', 'edit', 'update', 'delete', 'remove', 'approve', 'transfer', 'invoice'].includes(action)) {
+      console.log('❌ Investors cannot perform modification actions');
+      return false;
+    }
+
+    // Module-specific permissions for Investor
+    switch (module.toLowerCase()) {
+      case 'dashboard':
+        // Can view dashboard
+        return action === 'view';
+
+      case 'products':
+        // Can only view product data (no modifications)
+        return action === 'view';
+
+      case 'sales':
+        // Can only view sales data (no modifications)
+        return action === 'view';
+
+      case 'customers':
+        // Can only view customer data (no modifications)
+        return action === 'view';
+
+      case 'reports':
+        // Can view and export reports
+        return action === 'view' || action === 'export';
+
+      case 'help':
+        // Can view help
+        return action === 'view';
+
+      default:
+        // For all other modules, deny access
+        console.log(`❌ Investors cannot access module: ${module}`);
+        return false;
+    }
+  }, [user]);
+
   const hasPermission = useCallback((module: string, action: string = 'view', locationId?: string): boolean => {
     console.log('🔍 Permission Check:', {
       module,
@@ -675,7 +817,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return hasSalesManagerPermission(module, action, locationId);
     }
 
-    // Investor and other roles logic (existing)
+    // Investor specific logic
+    if (user.role === 'investor') {
+      return hasInvestorPermission(module, action, locationId);
+    }
+
+    // Other roles logic (existing)
     const modulePermissions = user.permissions[module.toLowerCase()];
 
     if (!modulePermissions) return false;

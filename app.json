@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Serrano Tex",
+    "name": "Serrano Tex IMS",
     "slug": "serrano-tex",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,16 +9,40 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "sdkVersion": "53.0.0",
+    "description": "Inventory Management System for Serrano Tex - Complete business management solution",
+    "platforms": ["ios", "android", "web"],
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.serranotex.app",
+      "bundleIdentifier": "com.serranotex.ims",
+      "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "This app uses camera to capture product images and delivery photos",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to select product images"
       }
     },
     "android": {
-      "package": "com.serranotex.app",
-      "versionCode": 1
+      "package": "com.serranotex.ims",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -26,7 +50,13 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you select product images and delivery photos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -80,6 +80,13 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
     locations: [],
   });
 
+  // Debug password changes
+  useEffect(() => {
+    if (formData.password) {
+      console.log('📝 FormData password updated to:', formData.password);
+    }
+  }, [formData.password]);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const canManageRoles = hasPermission('settings', 'userManagement');
@@ -149,17 +156,20 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
     for (let i = 0; i < 12; i++) {
       password += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    console.log('🔐 Password generation function called, generated:', password);
     return password;
   };
 
   // Copy password to clipboard
   const copyPassword = async () => {
     try {
-      // For React Native, we'll use a more functional approach
+      console.log('🔄 Copying password:', formData.password);
+
       if (Platform.OS === 'web') {
         // Web clipboard API
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(formData.password);
+          console.log('✅ Password copied via web clipboard API');
           showToastMessage('Password copied to clipboard!');
         } else {
           // Fallback for older browsers
@@ -173,16 +183,28 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
           textArea.select();
           document.execCommand('copy');
           textArea.remove();
+          console.log('✅ Password copied via fallback method');
           showToastMessage('Password copied to clipboard!');
         }
       } else {
-        // For React Native mobile, you would use @react-native-clipboard/clipboard
-        // import Clipboard from '@react-native-clipboard/clipboard';
-        // await Clipboard.setString(formData.password);
-        showToastMessage('Password copied to clipboard!');
+        // For React Native mobile - use Expo Clipboard
+        try {
+          const { setStringAsync } = await import('expo-clipboard');
+          await setStringAsync(formData.password);
+          console.log('✅ Password copied via Expo clipboard');
+          showToastMessage('Password copied to clipboard!');
+        } catch (clipboardError) {
+          console.error('❌ Expo clipboard failed:', clipboardError);
+          // Fallback: show the password in an alert for manual copy
+          Alert.alert(
+            'Password',
+            `Please copy this password manually:\n\n${formData.password}`,
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error) {
-      console.error('Copy failed:', error);
+      console.error('❌ Copy failed:', error);
       showToastMessage('Failed to copy password');
     }
   };
@@ -519,6 +541,7 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
   useEffect(() => {
     if ((formData.email.trim() || formData.mobileNumber.trim()) && !formData.password) {
       const newPassword = generatePassword();
+      console.log('🔑 Generated new password:', newPassword);
       setFormData(prev => ({ ...prev, password: newPassword }));
     }
   }, [formData.email, formData.mobileNumber]);

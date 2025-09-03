@@ -566,7 +566,7 @@ export default function ReportsPage() {
                 </Text>
 
                 <View style={styles.reportTypeActions}>
-                    {exportFormats.slice(0, 2).map((format) => {
+                    {hasPermission('reports', 'export') && exportFormats.slice(0, 2).map((format) => {
                         const FormatIcon = format.icon;
                         return (
                             <TouchableOpacity
@@ -640,19 +640,23 @@ export default function ReportsPage() {
                     <Eye size={16} color={theme.colors.status.info} />
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
-                    onPress={() => handleReportAction('download', item)}
-                >
-                    <Download size={16} color={theme.colors.primary} />
-                </TouchableOpacity>
+                {hasPermission('reports', 'export') && (
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
+                        onPress={() => handleReportAction('download', item)}
+                    >
+                        <Download size={16} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.colors.status.success + '20' }]}
-                    onPress={() => handleReportAction('share', item)}
-                >
-                    <Share2 size={16} color={theme.colors.status.success} />
-                </TouchableOpacity>
+                {hasPermission('reports', 'export') && (
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: theme.colors.status.success + '20' }]}
+                        onPress={() => handleReportAction('share', item)}
+                    >
+                        <Share2 size={16} color={theme.colors.status.success} />
+                    </TouchableOpacity>
+                )}
             </View>
         </View>
     );
@@ -835,32 +839,38 @@ export default function ReportsPage() {
         </View>
     );
 
-    const renderExportOptions = () => (
-        <View style={[styles.exportCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.exportTitle, { color: theme.colors.text.primary }]}>
-                Export Options
-            </Text>
+    const renderExportOptions = () => {
+        if (!hasPermission('reports', 'export')) {
+            return null;
+        }
 
-            <View style={styles.exportGrid}>
-                {exportFormats.map((format) => {
-                    const FormatIcon = format.icon;
-                    return (
-                        <TouchableOpacity
-                            key={format.id}
-                            style={[styles.exportButton, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.border }]}
-                            onPress={() => generateReport('sales', format.id as ExportFormat)}
-                            disabled={isGenerating}
-                        >
-                            <FormatIcon size={20} color={format.color} />
-                            <Text style={[styles.exportButtonText, { color: theme.colors.text.primary }]}>
-                                {format.label}
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                })}
+        return (
+            <View style={[styles.exportCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <Text style={[styles.exportTitle, { color: theme.colors.text.primary }]}>
+                    Export Options
+                </Text>
+
+                <View style={styles.exportGrid}>
+                    {exportFormats.map((format) => {
+                        const FormatIcon = format.icon;
+                        return (
+                            <TouchableOpacity
+                                key={format.id}
+                                style={[styles.exportButton, { backgroundColor: theme.colors.backgroundSecondary, borderColor: theme.colors.border }]}
+                                onPress={() => generateReport('sales', format.id as ExportFormat)}
+                                disabled={isGenerating}
+                            >
+                                <FormatIcon size={20} color={format.color} />
+                                <Text style={[styles.exportButtonText, { color: theme.colors.text.primary }]}>
+                                    {format.label}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     const renderTabContent = () => {
         switch (activeTab) {

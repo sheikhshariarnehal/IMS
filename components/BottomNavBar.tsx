@@ -62,6 +62,11 @@ const BottomNavBar = React.memo(function BottomNavBar({ activeTab }: BottomNavBa
     if (!user) return [];
 
     return allNavItems.filter(item => {
+      // Special handling for add button - Investors cannot add anything
+      if (item.id === 'add' && user.role === 'investor') {
+        return false;
+      }
+
       // Special handling for transfer - Sales Managers cannot transfer
       if (item.id === 'transfer' && user.role === 'sales_manager') {
         return false;

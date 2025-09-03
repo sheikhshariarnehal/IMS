@@ -1,4 +1,4 @@
-package com.serranotex.app
+package com.serranotex.ims
 
 import android.app.Application
 import android.content.res.Configuration

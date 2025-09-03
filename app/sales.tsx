@@ -791,12 +791,14 @@ export default function SalesPage() {
             <Eye size={16} color={theme.colors.status.info} />
           </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
-            onPress={() => handleAction('invoice', item)}
-          >
-            <FileText size={16} color={theme.colors.primary} />
-          </TouchableOpacity>
+          {hasPermission('sales', 'invoice') && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
+              onPress={() => handleAction('invoice', item)}
+            >
+              <FileText size={16} color={theme.colors.primary} />
+            </TouchableOpacity>
+          )}
           
           {hasPermission('sales', 'edit') && (
             <>
@@ -928,19 +930,23 @@ export default function SalesPage() {
             <Eye size={16} color={theme.colors.status.info} />
           </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.colors.status.success + '20' }]}
-            onPress={() => handleAction('payment', item)}
-          >
-            <CreditCard size={16} color={theme.colors.status.success} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '20' }]}
-            onPress={() => handleAction('reminder', item)}
-          >
-            <Clock size={16} color={theme.colors.status.warning} />
-          </TouchableOpacity>
+          {hasPermission('sales', 'edit') && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.colors.status.success + '20' }]}
+              onPress={() => handleAction('payment', item)}
+            >
+              <CreditCard size={16} color={theme.colors.status.success} />
+            </TouchableOpacity>
+          )}
+
+          {hasPermission('sales', 'edit') && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '20' }]}
+              onPress={() => handleAction('reminder', item)}
+            >
+              <Clock size={16} color={theme.colors.status.warning} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
