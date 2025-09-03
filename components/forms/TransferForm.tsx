@@ -37,6 +37,15 @@ import LotSelectionModal from './LotSelectionModal';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 const isMobile = screenWidth < 768;
+const isTablet = screenWidth >= 768 && screenWidth < 1024;
+
+// Enhanced touch response configuration
+const TOUCH_CONFIG = {
+  activeOpacity: 0.6,
+  delayPressIn: 0,
+  delayPressOut: 50,
+  hitSlop: { top: 8, bottom: 8, left: 8, right: 8 },
+};
 
 interface TransferFormData {
   productId: string;
@@ -416,57 +425,41 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       location.id.toString() !== formData.sourceLocationId
     );
 
-    const getLocationIcon = (type: string) => {
-      switch (type) {
-        case 'warehouse': return '🏭';
-        case 'showroom': return '🏪';
-        case 'storage': return '📦';
-        case 'store': return '🏬';
-        default: return '📍';
-      }
-    };
-
-    console.log('🎯 Rendering location selector:', {
-      availableLocations: availableLocations.length,
-      filteredLocations: filteredLocations.length,
-      sourceLocationId: formData.sourceLocationId,
-      searchText
-    });
-
     return (
       <View style={styles.locationSelectorContainer}>
         <Text style={styles.fieldLabel}>Destination Location *</Text>
         <TouchableOpacity
           style={[
             styles.locationSelectorButton,
-            { borderColor: errors.destinationLocation ? theme.colors.status.error : theme.colors.border },
-            showLocationDropdown && { borderColor: theme.colors.primary }
+            errors.destinationLocation && styles.locationSelectorButtonError,
+            showLocationDropdown && styles.locationSelectorButtonActive
           ]}
           onPress={() => setShowLocationDropdown(!showLocationDropdown)}
-          activeOpacity={0.7}
+          {...TOUCH_CONFIG}
+          disabled={availableLocations.length === 0}
         >
           <View style={styles.locationSelectorContent}>
-            <MapPin size={20} color={theme.colors.text.secondary} style={styles.inputIcon} />
+            <MapPin
+              size={20}
+              color={formData.destinationLocationName ? theme.colors.primary : theme.colors.text.muted}
+            />
             <View style={styles.locationSelectorTextContainer}>
               {formData.destinationLocationName ? (
-                <View style={styles.selectedLocationInfo}>
-                  <Text style={styles.selectedLocationText}>{formData.destinationLocationName}</Text>
-                  <Text style={styles.selectedLocationSubtext}>
-                    {getLocationIcon(availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || '')} {availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || 'Location'}
-                  </Text>
-                </View>
+                <Text style={styles.selectedLocationText} numberOfLines={1}>
+                  {formData.destinationLocationName}
+                </Text>
               ) : (
-                <Text style={styles.locationSelectorPlaceholder}>
-                  {availableLocations.length === 0 ? 'Loading locations...' : 'Select destination location'}
+                <Text style={styles.locationSelectorPlaceholder} numberOfLines={1}>
+                  {availableLocations.length === 0 ? 'Loading locations...' : 'Choose destination'}
                 </Text>
               )}
             </View>
             <ChevronDown
-              size={20}
+              size={18}
               color={theme.colors.text.muted}
               style={[
                 styles.dropdownIcon,
-                showLocationDropdown && { transform: [{ rotate: '180deg' }] }
+                showLocationDropdown && styles.dropdownIconRotated
               ]}
             />
           </View>
@@ -482,7 +475,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
           </Text>
         )}
 
-        {/* Location Selection Modal */}
+        {/* Simple Location Selection Modal */}
         <Modal
           visible={showLocationDropdown}
           transparent
@@ -494,53 +487,42 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
               <TouchableWithoutFeedback>
                 <View style={styles.locationModalContent}>
                   <View style={styles.locationModalHeader}>
-                    <Text style={styles.locationModalTitle}>Select Destination Location</Text>
+                    <Text style={styles.locationModalTitle}>Choose Destination</Text>
                     <TouchableOpacity
                       onPress={() => setShowLocationDropdown(false)}
                       style={styles.locationModalCloseButton}
+                      {...TOUCH_CONFIG}
                     >
-                      <X size={24} color={theme.colors.text.primary} />
+                      <X size={20} color={theme.colors.text.secondary} />
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.locationSearchContainer}>
-                    <Search size={18} color={theme.colors.text.secondary} />
-                    <TextInput
-                      style={styles.locationSearchInput}
-                      value={searchText}
-                      onChangeText={setSearchText}
-                      placeholder="Search locations..."
-                      placeholderTextColor={theme.colors.text.muted}
-                    />
-                  </View>
-
-                  {console.log('🎯 FlatList data:', filteredLocations)}
-
-                  {/* Debug: Show locations count */}
-                  <Text style={{ padding: 10, color: theme.colors.text.primary }}>
-                    Available: {availableLocations.length}, Filtered: {filteredLocations.length}
-                  </Text>
-
-                  {/* Debug: Show first location directly */}
-                  {filteredLocations.length > 0 && (
-                    <Text style={{ padding: 10, color: theme.colors.text.primary }}>
-                      First location: {filteredLocations[0].name}
-                    </Text>
+                  {filteredLocations.length > 3 && (
+                    <View style={styles.locationSearchContainer}>
+                      <Search size={18} color={theme.colors.text.secondary} />
+                      <TextInput
+                        style={styles.locationSearchInput}
+                        value={searchText}
+                        onChangeText={setSearchText}
+                        placeholder="Search..."
+                        placeholderTextColor={theme.colors.text.muted}
+                        returnKeyType="search"
+                        autoCorrect={false}
+                        autoCapitalize="none"
+                      />
+                    </View>
                   )}
 
-                  <ScrollView style={styles.locationList} showsVerticalScrollIndicator={false}>
+                  <View style={styles.locationList}>
                     {filteredLocations.length > 0 ? (
-                      filteredLocations.map((item) => (
+                      filteredLocations.map((item, index) => (
                         <TouchableOpacity
                           key={item.id.toString()}
-                          style={{
-                            padding: 16,
-                            borderBottomWidth: 1,
-                            borderBottomColor: theme.colors.border,
-                            backgroundColor: theme.colors.background,
-                          }}
+                          style={[
+                            styles.locationItem,
+                            index === filteredLocations.length - 1 && styles.locationItemLast
+                          ]}
                           onPress={() => {
-                            console.log('📍 Selected location:', item);
                             setFormData(prev => ({
                               ...prev,
                               destinationLocationId: item.id.toString(),
@@ -549,63 +531,35 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                             setSearchText('');
                             setShowLocationDropdown(false);
                           }}
-                          activeOpacity={0.7}
+                          {...TOUCH_CONFIG}
                         >
-                          <Text style={{
-                            fontSize: 16,
-                            fontWeight: '600',
-                            color: theme.colors.text.primary,
-                            marginBottom: 4,
-                          }}>
-                            {getLocationIcon(item.type)} {item.name}
-                          </Text>
-                          <Text style={{
-                            fontSize: 14,
-                            color: theme.colors.text.secondary,
-                            textTransform: 'capitalize',
-                          }}>
-                            {item.type}
-                          </Text>
-                          {item.address && (
-                            <Text style={{
-                              fontSize: 12,
-                              color: theme.colors.text.muted,
-                              marginTop: 2,
-                            }}>
-                              {item.address}
-                            </Text>
-                          )}
+                          <View style={styles.locationItemContent}>
+                            <View style={styles.locationItemInfo}>
+                              <Text style={styles.locationItemName}>
+                                {item.name}
+                              </Text>
+                              <Text style={styles.locationItemType}>
+                                {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                              </Text>
+                            </View>
+                            <View style={styles.locationItemIcon}>
+                              <ChevronDown
+                                size={16}
+                                color={theme.colors.text.muted}
+                                style={{ transform: [{ rotate: '-90deg' }] }}
+                              />
+                            </View>
+                          </View>
                         </TouchableOpacity>
                       ))
                     ) : (
-                      <View style={{
-                        padding: 40,
-                        alignItems: 'center',
-                      }}>
-                        <MapPin size={48} color={theme.colors.text.muted} />
-                        <Text style={{
-                          fontSize: 16,
-                          fontWeight: '600',
-                          color: theme.colors.text.primary,
-                          textAlign: 'center',
-                          marginTop: 16,
-                        }}>
+                      <View style={styles.noLocationsContainer}>
+                        <Text style={styles.noLocationsText}>
                           {searchText ? 'No locations found' : 'No locations available'}
-                        </Text>
-                        <Text style={{
-                          fontSize: 14,
-                          color: theme.colors.text.secondary,
-                          textAlign: 'center',
-                          marginTop: 8,
-                        }}>
-                          {searchText
-                            ? 'Try adjusting your search terms'
-                            : 'Please contact administrator to add locations'
-                          }
                         </Text>
                       </View>
                     )}
-                  </ScrollView>
+                  </View>
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -860,34 +814,38 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
   const styles = StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
       justifyContent: isMobile ? 'flex-end' : 'center',
       alignItems: isMobile ? 'stretch' : 'center',
       padding: isMobile ? 0 : 20,
     },
     container: {
       backgroundColor: theme.colors.background,
-      borderTopLeftRadius: isMobile ? 24 : 16,
-      borderTopRightRadius: isMobile ? 24 : 16,
-      borderBottomLeftRadius: isMobile ? 0 : 16,
-      borderBottomRightRadius: isMobile ? 0 : 16,
+      borderTopLeftRadius: isMobile ? 28 : 20,
+      borderTopRightRadius: isMobile ? 28 : 20,
+      borderBottomLeftRadius: isMobile ? 0 : 20,
+      borderBottomRightRadius: isMobile ? 0 : 20,
       maxHeight: isMobile ? '95%' : '90%',
-      minHeight: isMobile ? '80%' : '70%',
-      width: isMobile ? '100%' : Math.min(600, screenWidth * 0.9),
+      minHeight: isMobile ? '85%' : '75%',
+      width: isMobile ? '100%' : Math.min(640, screenWidth * 0.9),
       alignSelf: 'center',
-      elevation: 10,
+      elevation: 20,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.25,
-      shadowRadius: 12,
+      shadowOffset: { width: 0, height: isMobile ? -4 : 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 16,
     },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingVertical: 16,
+      paddingHorizontal: isMobile ? 20 : 24,
+      paddingVertical: isMobile ? 18 : 20,
       backgroundColor: theme.colors.primary,
+      borderTopLeftRadius: isMobile ? 28 : 20,
+      borderTopRightRadius: isMobile ? 28 : 20,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.primary + '20',
       elevation: 4,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -895,15 +853,18 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       shadowRadius: 4,
     },
     headerTitle: {
-      fontSize: 22,
+      fontSize: isMobile ? 18 : 20,
       fontWeight: '700',
       color: '#FFFFFF',
       letterSpacing: 0.5,
+      flex: 1,
     },
     closeButton: {
-      padding: 8,
-      borderRadius: 20,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      padding: isMobile ? 10 : 12,
+      borderRadius: 24,
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     stepIndicator: {
       flexDirection: 'row',
@@ -954,11 +915,13 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     },
     content: {
       flex: 1,
+      backgroundColor: theme.colors.background,
     },
     stepContent: {
       flex: 1,
       paddingHorizontal: isMobile ? 16 : 24,
-      paddingVertical: isMobile ? 16 : 20,
+      paddingVertical: isMobile ? 20 : 24,
+      paddingBottom: isMobile ? 24 : 32,
     },
     section: {
       marginBottom: 24,
@@ -1051,29 +1014,41 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     input: {
       borderWidth: 2,
       borderColor: theme.colors.border,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 16,
+      borderRadius: theme.borderRadius.lg,
+      paddingHorizontal: isMobile ? 16 : 18,
+      paddingVertical: isMobile ? 16 : 18,
+      fontSize: isMobile ? 15 : 16,
       color: theme.colors.text.primary,
       backgroundColor: theme.colors.backgroundTertiary,
       fontWeight: '500',
+      minHeight: isMobile ? 52 : 56,
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
     },
     inputError: {
       borderColor: theme.colors.status.error,
+      backgroundColor: theme.colors.status.error + '08',
     },
     textArea: {
       borderWidth: 2,
       borderColor: theme.colors.border,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 16,
+      borderRadius: theme.borderRadius.lg,
+      paddingHorizontal: isMobile ? 16 : 18,
+      paddingVertical: isMobile ? 16 : 18,
+      fontSize: isMobile ? 15 : 16,
       color: theme.colors.text.primary,
       backgroundColor: theme.colors.backgroundTertiary,
       fontWeight: '500',
-      height: 100,
+      height: isMobile ? 90 : 100,
       textAlignVertical: 'top',
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
     },
     errorText: {
       fontSize: 12,
@@ -1100,45 +1075,49 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       width: '100%',
     },
     locationSelectorButton: {
-      borderWidth: 2,
-      borderRadius: isMobile ? 12 : 8,
-      paddingHorizontal: isMobile ? 16 : 20,
-      paddingVertical: isMobile ? 14 : 16,
-      backgroundColor: theme.colors.backgroundTertiary,
-      minHeight: isMobile ? 56 : 60,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      backgroundColor: theme.colors.background,
+      minHeight: 56,
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    locationSelectorButtonActive: {
+      borderColor: theme.colors.primary,
+      shadowOpacity: 0.1,
+      elevation: 2,
+    },
+    locationSelectorButtonError: {
+      borderColor: theme.colors.status.error,
     },
     locationSelectorContent: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 12,
     },
     locationSelectorTextContainer: {
-      flex: 1,
-      marginHorizontal: 12,
-    },
-    selectedLocationInfo: {
       flex: 1,
     },
     selectedLocationText: {
       fontSize: 16,
       color: theme.colors.text.primary,
-      fontWeight: '600',
-    },
-    selectedLocationSubtext: {
-      fontSize: 12,
-      color: theme.colors.text.secondary,
-      marginTop: 2,
-      textTransform: 'capitalize',
+      fontWeight: '500',
     },
     locationSelectorPlaceholder: {
       fontSize: 16,
       color: theme.colors.text.muted,
-      fontStyle: 'italic',
-    },
-    inputIcon: {
-      marginRight: 8,
     },
     dropdownIcon: {
-      marginLeft: 8,
+      transition: 'transform 0.2s ease',
+    },
+    dropdownIconRotated: {
+      transform: [{ rotate: '180deg' }],
     },
     locationModalOverlay: {
       flex: 1,
@@ -1152,11 +1131,11 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       borderRadius: 16,
       width: '100%',
       maxWidth: 400,
-      maxHeight: '80%',
+      maxHeight: '70%',
       elevation: 10,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.25,
+      shadowOpacity: 0.15,
       shadowRadius: 12,
     },
     locationModalHeader: {
@@ -1167,10 +1146,12 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       paddingVertical: 16,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
     },
     locationModalTitle: {
       fontSize: 18,
-      fontWeight: '700',
+      fontWeight: '600',
       color: theme.colors.text.primary,
     },
     locationModalCloseButton: {
@@ -1182,78 +1163,60 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 20,
-      paddingVertical: 16,
+      paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
-      backgroundColor: theme.colors.backgroundSecondary,
+      gap: 12,
     },
     locationSearchInput: {
       flex: 1,
       fontSize: 16,
       color: theme.colors.text.primary,
-      marginLeft: 12,
       paddingVertical: 8,
     },
     locationList: {
-      flex: 1,
-      minHeight: 200,
-      maxHeight: 400,
+      maxHeight: 300,
     },
     locationItem: {
       paddingHorizontal: 20,
       paddingVertical: 16,
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border + '30',
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+    },
+    locationItemLast: {
+      borderBottomWidth: 0,
     },
     locationItemContent: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
     },
-    locationItemIconContainer: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: theme.colors.primary + '20',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 12,
-    },
-    locationItemIcon: {
-      fontSize: 18,
-    },
-    locationItemTextContainer: {
+    locationItemInfo: {
       flex: 1,
     },
     locationItemName: {
       fontSize: 16,
-      fontWeight: '600',
+      fontWeight: '500',
       color: theme.colors.text.primary,
+      marginBottom: 2,
     },
     locationItemType: {
-      fontSize: 12,
+      fontSize: 14,
       color: theme.colors.text.secondary,
-      marginTop: 2,
-      textTransform: 'capitalize',
     },
-    locationItemAddress: {
-      fontSize: 11,
-      color: theme.colors.text.muted,
-      marginTop: 2,
+    locationItemIcon: {
+      opacity: 0.5,
     },
     noLocationsContainer: {
       padding: 40,
       alignItems: 'center',
+      justifyContent: 'center',
     },
     noLocationsText: {
       fontSize: 16,
-      fontWeight: '600',
       color: theme.colors.text.secondary,
-      marginTop: 12,
-    },
-    noLocationsSubtext: {
-      fontSize: 14,
-      color: theme.colors.text.muted,
-      marginTop: 4,
+      textAlign: 'center',
     },
     dateContainer: {
       borderWidth: 2,
@@ -1373,22 +1336,25 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     },
     footer: {
       flexDirection: 'row',
-      gap: 16,
-      padding: 20,
-      borderTopWidth: 2,
+      gap: isMobile ? 12 : 16,
+      padding: isMobile ? 16 : 20,
+      borderTopWidth: 1,
       borderTopColor: theme.colors.border,
       backgroundColor: theme.colors.backgroundSecondary,
+      paddingBottom: isMobile ? 20 : 20, // Extra padding for mobile safe area
     },
     button: {
       flex: 1,
-      paddingVertical: 16,
-      borderRadius: 12,
+      paddingVertical: isMobile ? 18 : 20,
+      borderRadius: theme.borderRadius.lg,
       alignItems: 'center',
-      elevation: 2,
+      justifyContent: 'center',
+      minHeight: isMobile ? 52 : 56,
+      elevation: 3,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
     },
     backButton: {
       backgroundColor: theme.colors.backgroundTertiary,
@@ -1580,6 +1546,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
               >
                 {/* Header */}
                 <View style={styles.header}>
@@ -1591,8 +1558,9 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                       onClose();
                     }}
                     disabled={loading}
+                    {...TOUCH_CONFIG}
                   >
-                    <X size={24} color="#FFFFFF" />
+                    <X size={isMobile ? 20 : 24} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
@@ -1600,13 +1568,18 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                 {renderStepIndicator()}
 
                 {/* Content */}
-                <ScrollView 
-                  style={styles.content} 
+                <ScrollView
+                  style={styles.content}
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{ paddingBottom: 20 }}
+                  contentContainerStyle={{
+                    paddingBottom: isMobile ? 24 : 20,
+                    flexGrow: 1
+                  }}
                   bounces={true}
                   scrollEventThrottle={16}
                   decelerationRate="normal"
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
                 >
                   {renderStepContent()}
                 </ScrollView>
@@ -1618,7 +1591,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                       style={[styles.button, styles.backButton]}
                       onPress={handlePrevStep}
                       disabled={loading}
-                      activeOpacity={loading ? 1 : 0.7}
+                      {...TOUCH_CONFIG}
                     >
                       <Text style={[styles.backButtonText, loading && { opacity: 0.5 }]}>← Back</Text>
                     </TouchableOpacity>
@@ -1630,7 +1603,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                         onClose();
                       }}
                       disabled={loading}
-                      activeOpacity={loading ? 1 : 0.7}
+                      {...TOUCH_CONFIG}
                     >
                       <Text style={[styles.backButtonText, loading && { opacity: 0.5 }]}>Cancel</Text>
                     </TouchableOpacity>
@@ -1641,7 +1614,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                       style={[styles.button, styles.nextButton]}
                       onPress={handleNextStep}
                       disabled={loading}
-                      activeOpacity={loading ? 1 : 0.8}
+                      {...TOUCH_CONFIG}
                     >
                       <Text style={[styles.nextButtonText, loading && { opacity: 0.5 }]}>Next →</Text>
                     </TouchableOpacity>
@@ -1654,7 +1627,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                       ]}
                       onPress={handleSubmit}
                       disabled={!canTransferProduct || loading}
-                      activeOpacity={0.8}
+                      {...TOUCH_CONFIG}
                     >
                       <View style={styles.submitButtonContent}>
                         {loading ? (
