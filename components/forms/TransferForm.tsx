@@ -35,7 +35,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { FormService } from '@/lib/services/formService';
 import LotSelectionModal from './LotSelectionModal';
 
-const { height: screenHeight } = Dimensions.get('window');
+const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
+const isMobile = screenWidth < 768;
 
 interface TransferFormData {
   productId: string;
@@ -110,9 +111,47 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
   // Fetch available locations
   useEffect(() => {
     const fetchLocations = async () => {
-      const result = await FormService.getActiveLocations();
-      if (result.success && result.data) {
-        setAvailableLocations(result.data);
+      console.log('🔄 Fetching locations for transfer form...');
+      try {
+        const result = await FormService.getActiveLocations();
+        console.log('📍 Locations fetch result:', result);
+
+        if (result.success && result.data) {
+          console.log('✅ Setting available locations:', result.data);
+          setAvailableLocations(result.data);
+        } else {
+          console.error('❌ Failed to fetch locations:', result.error);
+          // Fallback: try to get locations from LocationContext
+          console.log('🔄 Trying fallback location fetch...');
+          const fallbackResult = await FormService.getLocations();
+          console.log('📍 Fallback locations result:', fallbackResult);
+          if (fallbackResult && fallbackResult.length > 0) {
+            const activeLocations = fallbackResult.filter(loc => loc.status === 'active');
+            console.log('✅ Using fallback locations:', activeLocations);
+            setAvailableLocations(activeLocations);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error fetching locations:', error);
+        // Final fallback: try direct supabase query
+        try {
+          console.log('🔄 Trying direct supabase query...');
+          const { supabase } = await import('@/lib/supabase');
+          const { data: directData, error: directError } = await supabase
+            .from('locations')
+            .select('id, name, type, address')
+            .eq('status', 'active')
+            .order('name');
+
+          if (directError) {
+            console.error('❌ Direct query failed:', directError);
+          } else {
+            console.log('✅ Direct query success:', directData);
+            setAvailableLocations(directData || []);
+          }
+        } catch (directQueryError) {
+          console.error('❌ Direct query error:', directQueryError);
+        }
       }
     };
 
@@ -387,8 +426,16 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       }
     };
 
+    console.log('🎯 Rendering location selector:', {
+      availableLocations: availableLocations.length,
+      filteredLocations: filteredLocations.length,
+      sourceLocationId: formData.sourceLocationId,
+      searchText
+    });
+
     return (
       <View style={styles.locationSelectorContainer}>
+        <Text style={styles.fieldLabel}>Destination Location *</Text>
         <TouchableOpacity
           style={[
             styles.locationSelectorButton,
@@ -399,17 +446,19 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
           activeOpacity={0.7}
         >
           <View style={styles.locationSelectorContent}>
-            <MapPin size={18} color={theme.colors.text.secondary} style={styles.inputIcon} />
+            <MapPin size={20} color={theme.colors.text.secondary} style={styles.inputIcon} />
             <View style={styles.locationSelectorTextContainer}>
               {formData.destinationLocationName ? (
                 <View style={styles.selectedLocationInfo}>
                   <Text style={styles.selectedLocationText}>{formData.destinationLocationName}</Text>
                   <Text style={styles.selectedLocationSubtext}>
-                    {availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || 'Location'}
+                    {getLocationIcon(availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || '')} {availableLocations.find(l => l.id.toString() === formData.destinationLocationId)?.type || 'Location'}
                   </Text>
                 </View>
               ) : (
-                <Text style={styles.locationSelectorPlaceholder}>Select destination location</Text>
+                <Text style={styles.locationSelectorPlaceholder}>
+                  {availableLocations.length === 0 ? 'Loading locations...' : 'Select destination location'}
+                </Text>
               )}
             </View>
             <ChevronDown
@@ -422,6 +471,16 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
             />
           </View>
         </TouchableOpacity>
+
+        {errors.destinationLocation && (
+          <Text style={styles.errorText}>{errors.destinationLocation}</Text>
+        )}
+
+        {availableLocations.length === 0 && (
+          <Text style={styles.warningText}>
+            No locations available. Please check your permissions or contact administrator.
+          </Text>
+        )}
 
         {/* Location Selection Modal */}
         <Modal
@@ -455,54 +514,98 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
                     />
                   </View>
 
-                  <FlatList
-                    data={filteredLocations}
-                    keyExtractor={(item) => item.id.toString()}
-                    style={styles.locationList}
-                    showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={styles.locationItem}
-                        onPress={() => {
-                          setFormData(prev => ({
-                            ...prev,
-                            destinationLocationId: item.id.toString(),
-                            destinationLocationName: item.name
-                          }));
-                          setSearchText('');
-                          setShowLocationDropdown(false);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.locationItemContent}>
-                          <View style={styles.locationItemIconContainer}>
-                            <Text style={styles.locationItemIcon}>{getLocationIcon(item.type)}</Text>
-                          </View>
-                          <View style={styles.locationItemTextContainer}>
-                            <Text style={styles.locationItemName}>{item.name}</Text>
-                            <Text style={styles.locationItemType}>{item.type}</Text>
-                            {item.address && (
-                              <Text style={styles.locationItemAddress} numberOfLines={1}>
-                                {item.address}
-                              </Text>
-                            )}
-                          </View>
-                          <ChevronDown
-                            size={16}
-                            color={theme.colors.text.muted}
-                            style={{ transform: [{ rotate: '-90deg' }] }}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                    ListEmptyComponent={
-                      <View style={styles.noLocationsContainer}>
+                  {console.log('🎯 FlatList data:', filteredLocations)}
+
+                  {/* Debug: Show locations count */}
+                  <Text style={{ padding: 10, color: theme.colors.text.primary }}>
+                    Available: {availableLocations.length}, Filtered: {filteredLocations.length}
+                  </Text>
+
+                  {/* Debug: Show first location directly */}
+                  {filteredLocations.length > 0 && (
+                    <Text style={{ padding: 10, color: theme.colors.text.primary }}>
+                      First location: {filteredLocations[0].name}
+                    </Text>
+                  )}
+
+                  <ScrollView style={styles.locationList} showsVerticalScrollIndicator={false}>
+                    {filteredLocations.length > 0 ? (
+                      filteredLocations.map((item) => (
+                        <TouchableOpacity
+                          key={item.id.toString()}
+                          style={{
+                            padding: 16,
+                            borderBottomWidth: 1,
+                            borderBottomColor: theme.colors.border,
+                            backgroundColor: theme.colors.background,
+                          }}
+                          onPress={() => {
+                            console.log('📍 Selected location:', item);
+                            setFormData(prev => ({
+                              ...prev,
+                              destinationLocationId: item.id.toString(),
+                              destinationLocationName: item.name
+                            }));
+                            setSearchText('');
+                            setShowLocationDropdown(false);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '600',
+                            color: theme.colors.text.primary,
+                            marginBottom: 4,
+                          }}>
+                            {getLocationIcon(item.type)} {item.name}
+                          </Text>
+                          <Text style={{
+                            fontSize: 14,
+                            color: theme.colors.text.secondary,
+                            textTransform: 'capitalize',
+                          }}>
+                            {item.type}
+                          </Text>
+                          {item.address && (
+                            <Text style={{
+                              fontSize: 12,
+                              color: theme.colors.text.muted,
+                              marginTop: 2,
+                            }}>
+                              {item.address}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={{
+                        padding: 40,
+                        alignItems: 'center',
+                      }}>
                         <MapPin size={48} color={theme.colors.text.muted} />
-                        <Text style={styles.noLocationsText}>No locations found</Text>
-                        <Text style={styles.noLocationsSubtext}>Try adjusting your search</Text>
+                        <Text style={{
+                          fontSize: 16,
+                          fontWeight: '600',
+                          color: theme.colors.text.primary,
+                          textAlign: 'center',
+                          marginTop: 16,
+                        }}>
+                          {searchText ? 'No locations found' : 'No locations available'}
+                        </Text>
+                        <Text style={{
+                          fontSize: 14,
+                          color: theme.colors.text.secondary,
+                          textAlign: 'center',
+                          marginTop: 8,
+                        }}>
+                          {searchText
+                            ? 'Try adjusting your search terms'
+                            : 'Please contact administrator to add locations'
+                          }
+                        </Text>
                       </View>
-                    }
-                  />
+                    )}
+                  </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -758,14 +861,20 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     overlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'flex-end',
+      justifyContent: isMobile ? 'flex-end' : 'center',
+      alignItems: isMobile ? 'stretch' : 'center',
+      padding: isMobile ? 0 : 20,
     },
     container: {
       backgroundColor: theme.colors.background,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      maxHeight: '95%',
-      minHeight: '80%',
+      borderTopLeftRadius: isMobile ? 24 : 16,
+      borderTopRightRadius: isMobile ? 24 : 16,
+      borderBottomLeftRadius: isMobile ? 0 : 16,
+      borderBottomRightRadius: isMobile ? 0 : 16,
+      maxHeight: isMobile ? '95%' : '90%',
+      minHeight: isMobile ? '80%' : '70%',
+      width: isMobile ? '100%' : Math.min(600, screenWidth * 0.9),
+      alignSelf: 'center',
       elevation: 10,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: -4 },
@@ -848,7 +957,8 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     },
     stepContent: {
       flex: 1,
-      paddingHorizontal: 20,
+      paddingHorizontal: isMobile ? 16 : 24,
+      paddingVertical: isMobile ? 16 : 20,
     },
     section: {
       marginBottom: 24,
@@ -991,11 +1101,11 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     },
     locationSelectorButton: {
       borderWidth: 2,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
+      borderRadius: isMobile ? 12 : 8,
+      paddingHorizontal: isMobile ? 16 : 20,
+      paddingVertical: isMobile ? 14 : 16,
       backgroundColor: theme.colors.backgroundTertiary,
-      minHeight: 56,
+      minHeight: isMobile ? 56 : 60,
     },
     locationSelectorContent: {
       flexDirection: 'row',
@@ -1086,6 +1196,8 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
     },
     locationList: {
       flex: 1,
+      minHeight: 200,
+      maxHeight: 400,
     },
     locationItem: {
       paddingHorizontal: 20,
@@ -1408,6 +1520,37 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       fontSize: 14,
       color: theme.colors.text.secondary,
       marginTop: 8,
+      textAlign: 'center',
+    },
+    fieldLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text.primary,
+      marginBottom: 8,
+    },
+    errorText: {
+      fontSize: 14,
+      color: theme.colors.status.error,
+      marginTop: 4,
+    },
+    warningText: {
+      fontSize: 14,
+      color: theme.colors.status.warning,
+      marginTop: 8,
+      textAlign: 'center',
+      fontStyle: 'italic',
+    },
+    retryButton: {
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 8,
+      marginTop: 12,
+    },
+    retryButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
       textAlign: 'center',
     },
   });

@@ -33,6 +33,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import SharedLayout from '@/components/SharedLayout';
 import TransferForm from '@/components/forms/TransferForm';
+import LocationDebug from '@/components/debug/LocationDebug';
 import { supabase } from '@/lib/supabase';
 
 const { width } = Dimensions.get('window');
@@ -515,6 +516,14 @@ const TransferPage = React.memo(function TransferPage() {
         <BarChart size={20} color={activeTab === 'status' ? theme.colors.primary : theme.colors.text.secondary} />
         <Text style={[styles.tabText, activeTab === 'status' && styles.activeTabText]}>Status</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.tab, activeTab === 'debug' && styles.activeTab]}
+        onPress={() => setActiveTab('debug')}
+      >
+        <AlertTriangle size={20} color={activeTab === 'debug' ? theme.colors.primary : theme.colors.text.secondary} />
+        <Text style={[styles.tabText, activeTab === 'debug' && styles.activeTabText]}>Debug</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -724,6 +733,9 @@ const TransferPage = React.memo(function TransferPage() {
             </View>
           </ScrollView>
         );
+
+      case 'debug':
+        return <LocationDebug />;
 
       default:
         return null;

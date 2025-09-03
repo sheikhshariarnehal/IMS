@@ -2271,6 +2271,36 @@ export class FormService {
   // Get locations for transfer
   static async getActiveLocations(): Promise<{ success: boolean; data?: any[]; error?: string }> {
     try {
+      console.log('🔄 FormService.getActiveLocations called');
+
+      // Return mock data in demo mode
+      if (isDemoMode) {
+        console.log('Demo mode: Returning mock locations for transfer');
+        const mockLocations = [
+          {
+            id: 1,
+            name: 'Main Warehouse',
+            type: 'warehouse',
+            address: '123 Main Street, Dhaka',
+          },
+          {
+            id: 2,
+            name: 'Showroom Gulshan',
+            type: 'showroom',
+            address: '456 Gulshan Avenue, Dhaka',
+          },
+          {
+            id: 3,
+            name: 'Secondary Warehouse',
+            type: 'warehouse',
+            address: '789 Industrial Area, Chittagong',
+          }
+        ];
+        return { success: true, data: mockLocations };
+      }
+
+      await this.ensureUserContext();
+
       const { data, error } = await supabase
         .from('locations')
         .select('id, name, type, address')
@@ -2278,13 +2308,14 @@ export class FormService {
         .order('name', { ascending: true });
 
       if (error) {
-        console.error('Error fetching locations:', error);
+        console.error('❌ Error fetching locations:', error);
         return { success: false, error: error.message };
       }
 
+      console.log('✅ Successfully fetched locations:', data?.length || 0);
       return { success: true, data: data || [] };
     } catch (error) {
-      console.error('Error fetching locations:', error);
+      console.error('❌ Error fetching locations:', error);
       return { success: false, error: 'Failed to fetch locations' };
     }
   }
