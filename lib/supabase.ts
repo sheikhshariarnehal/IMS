@@ -105,7 +105,7 @@ const demoUsers: User[] = [
     role: 'sales_manager',
     status: 'active',
     permissions: {},
-    assigned_location_id: 1,
+    assigned_location_id: 2, // Showroom Gulshan (showroom)
     can_add_sales_managers: false,
     profile_picture: undefined,
     last_login: new Date().toISOString(),

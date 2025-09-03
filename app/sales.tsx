@@ -298,7 +298,7 @@ const mockDuePayments: DuePayment[] = [
 
 export default function SalesPage() {
   const { theme } = useTheme();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'sales' | 'due-payments' | 'invoices'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
   const [duePayments, setDuePayments] = useState<DuePayment[]>([]);
@@ -314,8 +314,15 @@ export default function SalesPage() {
     try {
       setLoading(true);
 
+      // Apply location filtering for sales managers
+      let enhancedFilters = { ...filters };
+      if (user?.role === 'sales_manager' && user.assigned_location_id) {
+        // For sales managers, always filter by their assigned location
+        enhancedFilters.location = user.assigned_location_id.toString();
+      }
+
       // Load sales summary
-      const salesData = await FormService.getSalesSummary(filters);
+      const salesData = await FormService.getSalesSummary(enhancedFilters);
       setSales(salesData.map((sale: any) => ({
         id: sale.id?.toString() || '',
         saleNumber: sale.sale_number || '',
@@ -427,9 +434,10 @@ export default function SalesPage() {
     setRefreshing(false);
   };
 
-  const handleSalesSubmit = async () => {
+  const handleSalesSubmit = async (saleData: any) => {
     try {
       // The sale is already created in the SalesForm, just refresh the data
+      console.log('Sale submitted:', saleData);
       await loadSalesData();
       setShowSalesForm(false);
     } catch (error) {

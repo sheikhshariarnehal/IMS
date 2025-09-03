@@ -24,6 +24,7 @@ import {
   LogOut,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'expo-router';
 
 const { width } = Dimensions.get('window');
@@ -51,6 +52,7 @@ interface MenuItem {
 
 const AnimatedSidebar = React.memo(function AnimatedSidebar({ isOpen, onClose, onLogout }: AnimatedSidebarProps) {
   const { theme } = useTheme();
+  const { hasPermission, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   // Direct router usage for maximum performance
@@ -60,7 +62,8 @@ const AnimatedSidebar = React.memo(function AnimatedSidebar({ isOpen, onClose, o
   const slideAnim = useRef(new Animated.Value(isMobile ? -SIDEBAR_WIDTH : 0)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
-  const menuItems: MenuItem[] = [
+  // All available menu items
+  const allMenuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: 'Dashboard', route: '/dashboard' },
     { icon: Package, label: 'Products', route: '/products' },
     { icon: Warehouse, label: 'Inventory', route: '/inventory' },
@@ -74,6 +77,35 @@ const AnimatedSidebar = React.memo(function AnimatedSidebar({ isOpen, onClose, o
     { icon: Settings, label: 'Settings', route: '/settings' },
     { icon: HelpCircle, label: 'Help & Support', route: '/support' },
   ];
+
+  // Filter menu items based on user permissions
+  const menuItems = useMemo(() => {
+    if (!user) return [];
+
+    return allMenuItems.filter(item => {
+      // Map routes to permission modules
+      const routePermissionMap: Record<string, string> = {
+        '/dashboard': 'dashboard',
+        '/products': 'products',
+        '/inventory': 'inventory',
+        '/sales': 'sales',
+        '/customers': 'customers',
+        '/suppliers': 'suppliers',
+        '/samples': 'samples',
+        '/reports': 'reports',
+        '/notification': 'notifications',
+        '/logs': 'activityLogs',
+        '/settings': 'settings',
+        '/support': 'support'
+      };
+
+      const module = routePermissionMap[item.route];
+      if (!module) return true; // Show items without specific permission requirements
+
+      // Check if user has permission to view this module
+      return hasPermission(module, 'view');
+    });
+  }, [user, hasPermission]);
 
   useEffect(() => {
     if (isMobile) {

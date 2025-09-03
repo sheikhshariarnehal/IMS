@@ -370,7 +370,7 @@ export class FormService {
         supplier_id: 1,
         supplier_name: 'Textile Suppliers Inc.',
         location_id: 2,
-        location_name: 'Secondary Warehouse',
+        location_name: 'Showroom Gulshan',
         minimum_threshold: 40,
         current_stock: 25,
         total_purchased: 300,
@@ -600,7 +600,7 @@ export class FormService {
             unit_of_measurement: 'meters',
             category_id: 4,
             supplier_id: 3,
-            location_id: 1,
+            location_id: 2, // Showroom Gulshan
             minimum_threshold: 60,
             product_status: 'active'
           },
@@ -609,15 +609,15 @@ export class FormService {
             name: 'Linen Fabric',
             product_code: 'LIN-005',
             category: 'Linen',
-            current_stock: 5,
+            current_stock: 50,
             selling_price: 42.00,
             unit_of_measure: 'meters',
             unit_of_measurement: 'meters',
             category_id: 5,
             supplier_id: 2,
-            location_id: 1,
+            location_id: 2, // Showroom Gulshan
             minimum_threshold: 25,
-            product_status: 'slow'
+            product_status: 'active'
           }
         ];
       }

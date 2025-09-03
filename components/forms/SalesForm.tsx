@@ -67,11 +67,12 @@ interface SalesFormData {
 interface SalesFormProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void;
-  onSaveDraft: (data: any) => void;
+  onSubmit?: (data: any) => void;
+  onSaveDraft?: (data: any) => void;
+  onSuccess?: () => void;
 }
 
-export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: SalesFormProps) {
+export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onSuccess }: SalesFormProps) {
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
   const { showToast } = useToast();
@@ -201,9 +202,15 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
   const loadData = async () => {
     try {
+      // Apply location filtering for sales managers
+      let productFilters = {};
+      if (user?.role === 'sales_manager' && user.assigned_location_id) {
+        productFilters = { location: user.assigned_location_id.toString() };
+      }
+
       // Load real data from database
       const [productsData, customersData] = await Promise.all([
-        FormService.getExistingProducts(),
+        FormService.getProducts(productFilters),
         FormService.getCustomers()
       ]);
 
@@ -512,6 +519,11 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
 
   // Handle final submission
   const handleFinalSubmission = async () => {
+    console.log('🚀 Starting sale completion process...');
+    console.log('📋 Form data:', formData);
+    console.log('👤 User:', user);
+    console.log('🏪 Selected product:', selectedProduct);
+
     if (!validatePaymentStep()) {
       Alert.alert('Incomplete Payment Details', 'Please complete all required payment information.');
       return;
@@ -525,16 +537,39 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
         return;
       }
 
-      // Check location-specific permissions for admin users
+      // Check location-specific permissions for admin and sales manager users
       if (user.role === 'admin' && selectedProduct?.location_id) {
         if (!canCreateSaleAtLocation(selectedProduct.location_id)) {
           showToast('You do not have permission to create sales at this location. Admins can only create sales at showrooms they have access to.', 'error');
           return;
         }
+      } else if (user.role === 'sales_manager' && selectedProduct?.location_id) {
+        // Sales managers can only create sales at their assigned location
+        const productLocationId = typeof selectedProduct.location_id === 'string'
+          ? parseInt(selectedProduct.location_id)
+          : selectedProduct.location_id;
+
+        console.log('🔍 Sales Manager Location Check:', {
+          userAssignedLocation: user.assigned_location_id,
+          productLocationId,
+          selectedProductLocationId: selectedProduct.location_id,
+          match: productLocationId === user.assigned_location_id
+        });
+
+        if (user.assigned_location_id && productLocationId !== user.assigned_location_id) {
+          console.log('❌ Location mismatch - blocking sale');
+          showToast('You can only create sales for products in your assigned location.', 'error');
+          return;
+        }
+        console.log('✅ Location check passed');
       }
+
+      // Generate sale number
+      const saleNumber = `SALE-${Date.now()}`;
 
       // Prepare sale data for Supabase (matching actual database schema)
       const saleData = {
+        sale_number: saleNumber,
         customer_id: parseInt(selectedCustomer!.id),
         subtotal: totals.subtotal,
         discount_amount: totals.discountAmount,
@@ -547,11 +582,16 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
                    totals.total,
         payment_method: formData.paymentMethod,
         payment_status: formData.paymentType === 'full' ? 'paid' : (formData.paymentType === 'partial' ? 'partial' : 'pending'),
+        sale_status: 'finalized',
         delivery_person: formData.notes || undefined,
         location_id: selectedProduct?.location_id ? parseInt(selectedProduct.location_id) : undefined,
       };
 
+      console.log('💾 Sale data to be created:', saleData);
+
+      console.log('🚀 Calling FormService.createSale...');
       const result = await FormService.createSale(saleData, user.id);
+      console.log('📊 Sale creation result:', result);
 
       if (result.success && result.data) {
         // Create sale item after successful sale creation
@@ -563,6 +603,8 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
           unit_price: parseFloat(formData.unitPrice),
           total_price: totals.subtotal
         };
+
+        console.log('📦 Creating sale item:', saleItemData);
 
         // Insert sale item
         const { error: itemError } = await supabase
@@ -589,12 +631,18 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft }: S
           5000
         );
 
-        // Call the original submission handler for UI updates
-        await onSubmit({
-          ...saleData,
-          id: result.data.id,
-          sale_number: result.data.sale_number
-        });
+        // Call the appropriate callback
+        if (onSubmit) {
+          await onSubmit({
+            ...saleData,
+            id: result.data.id,
+            sale_number: result.data.sale_number
+          });
+        }
+
+        if (onSuccess) {
+          onSuccess();
+        }
 
         // Close form after showing success animation
         setTimeout(() => {

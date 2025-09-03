@@ -83,7 +83,7 @@ const ProductsPage = React.memo(function ProductsPage() {
     try {
       setLoading(true);
 
-      // Apply location filtering for admin users
+      // Apply location filtering for admin and sales manager users
       let enhancedFilters = { ...filters };
       if (user?.role === 'admin') {
         const adminLocations = user.permissions?.locations || [];
@@ -92,6 +92,9 @@ const ProductsPage = React.memo(function ProductsPage() {
           // we'll let the RLS handle the filtering at the database level
           // The RLS policies should already restrict products to admin's locations
         }
+      } else if (user?.role === 'sales_manager' && user.assigned_location_id) {
+        // For sales managers, always filter by their assigned location
+        enhancedFilters.location = user.assigned_location_id.toString();
       }
 
       // Fetch products from database

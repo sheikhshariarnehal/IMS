@@ -424,10 +424,27 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
         role: formData.role.toLowerCase().replace(' ', '_') as 'super_admin' | 'admin' | 'sales_manager' | 'investor',
         assigned_location_id: formData.role === 'Sales Manager' && formData.locations.length > 0 ? parseInt(formData.locations[0]) : undefined,
         phone: formData.mobileNumber?.trim() || undefined,
-        // For admins, store multiple locations in permissions
-        permissions: formData.role === 'Admin' && formData.locations.length > 0 ? {
-          locations: formData.locations.map(id => parseInt(id))
-        } : undefined,
+        // Set permissions based on role
+        permissions: (() => {
+          if (formData.role === 'Admin' && formData.locations.length > 0) {
+            return { locations: formData.locations.map(id => parseInt(id)) };
+          } else if (formData.role === 'Sales Manager') {
+            // Set default permissions for Sales Manager
+            return {
+              dashboard: true,
+              products: { view: true, add: false, edit: false, delete: false },
+              inventory: { view: true, add: false, edit: false, delete: false, transfer: false },
+              sales: { view: true, add: true, edit: true, delete: false, invoice: true },
+              customers: { view: true, add: true, edit: true, delete: false },
+              suppliers: { view: false, add: false, edit: false, delete: false },
+              samples: { view: false, add: false, edit: false, delete: false },
+              reports: { view: true, export: true },
+              notifications: { view: false, manage: false },
+              activityLogs: { view: false }
+            };
+          }
+          return undefined;
+        })(),
       };
 
       // Get current user from auth context

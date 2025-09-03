@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Home, Search, Plus, Clock, User, Bell, Repeat } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'expo-router';
 // Removed useFastNavigation for direct router usage
 import OptimizedFloatingMenu from './OptimizedFloatingMenu';
@@ -12,22 +13,25 @@ interface BottomNavBarProps {
 
 const BottomNavBar = React.memo(function BottomNavBar({ activeTab }: BottomNavBarProps) {
   const { theme } = useTheme();
+  const { hasPermission, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   // Direct router usage for maximum performance
 
-  const navItems = [
+  const allNavItems = [
     {
       id: 'home',
       label: 'Home',
       icon: Home,
       route: '/dashboard',
+      module: 'dashboard'
     },
     {
       id: 'search',
       label: 'Product',
       icon: Search,
       route: '/products',
+      module: 'products'
     },
     {
       id: 'add',
@@ -35,20 +39,38 @@ const BottomNavBar = React.memo(function BottomNavBar({ activeTab }: BottomNavBa
       icon: Plus,
       route: '/add',
       isCenter: true,
+      module: 'sales' // Add button is primarily for sales
     },
     {
       id: 'sales',
       label: 'Sales',
       icon: Clock,
       route: '/sales',
+      module: 'sales'
     },
     {
       id: 'transfer',
       label: 'Transfer',
       icon: Repeat,
       route: '/transfer',
+      module: 'inventory'
     },
   ];
+
+  // Filter navigation items based on permissions
+  const navItems = useMemo(() => {
+    if (!user) return [];
+
+    return allNavItems.filter(item => {
+      // Special handling for transfer - Sales Managers cannot transfer
+      if (item.id === 'transfer' && user.role === 'sales_manager') {
+        return false;
+      }
+
+      // Check if user has permission to view this module
+      return hasPermission(item.module, 'view');
+    });
+  }, [user, hasPermission]);
 
   const handleTabPress = useCallback((item: typeof navItems[0]) => {
     if (item.route) {

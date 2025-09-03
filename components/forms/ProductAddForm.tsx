@@ -693,6 +693,18 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
 
   const canAddProduct = hasPermission('products', 'add');
 
+  // Debug logging for permission issues
+  React.useEffect(() => {
+    console.log('🔍 ProductAddForm Permission Check:', {
+      visible,
+      user: user?.role,
+      userId: user?.id,
+      canAddProduct,
+      userPermissions: user?.permissions,
+      hasPermissionFunction: typeof hasPermission
+    });
+  }, [visible, user, canAddProduct, hasPermission]);
+
   // Check if user can add products to specific location
   const canAddProductToLocation = useCallback((locationId: string) => {
     return hasPermission('products', 'add', locationId);

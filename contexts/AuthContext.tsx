@@ -341,6 +341,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return showroomAccess;
   }, [isShowroom]);
 
+  // Generate default permissions for Sales Manager role
+  const generateSalesManagerPermissions = useCallback((): UserPermissions => {
+    return {
+      dashboard: true,
+      products: {
+        view: true,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      inventory: {
+        view: true,
+        add: false,
+        edit: false,
+        delete: false,
+        transfer: false,
+      },
+      sales: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false,
+        invoice: true,
+      },
+      customers: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false,
+      },
+      suppliers: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      samples: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      reports: {
+        view: true,
+        export: true,
+      },
+      notifications: {
+        view: false,
+        manage: false,
+      },
+      activityLogs: {
+        view: false,
+      },
+    };
+  }, []);
+
   // Optimize auth methods with useCallback
   const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -400,12 +456,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('🔍 Raw user data from database:', user);
       console.log('🔍 User permissions field:', user.permissions);
 
+      // Set default permissions for Sales Manager if none exist
+      let userPermissions = user.permissions || {};
+      if (user.role === 'sales_manager' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
+        console.log('🔧 Setting default permissions for Sales Manager');
+        userPermissions = generateSalesManagerPermissions();
+      }
+
       const userSession: UserSession = {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
-        permissions: user.permissions || {},
+        permissions: userPermissions,
         assignedLocations: user.assigned_location_id ? [user.assigned_location_id] : [],
         assigned_location_id: user.assigned_location_id,
         loginTime: new Date().toISOString()
@@ -435,7 +498,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Login error:', error);
       return { success: false, error: 'Login failed. Please try again.' };
     }
-  }, []);
+  }, [generateSalesManagerPermissions]);
 
   // Function to refresh user data from database
   const refreshUserData = useCallback(async () => {
@@ -495,18 +558,124 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  const hasPermission = useCallback((module: string, action: string = 'view', locationId?: string): boolean => {
-    if (!user || !user.permissions) return false;
+  // Sales Manager permission logic based on business rules
+  const hasSalesManagerPermission = useCallback((module: string, action: string, locationId?: string): boolean => {
+    console.log('🏪 Sales Manager Permission Check:', {
+      module,
+      action,
+      locationId,
+      userRole: user?.role,
+      assignedLocationId: user?.assigned_location_id,
+      fullUser: user
+    });
 
-    // Super admin has all permissions
-    if (user.role === 'super_admin') return true;
+    if (!user || user.role !== 'sales_manager') {
+      console.log('❌ Not sales manager user');
+      return false;
+    }
+
+    // Sales Managers CANNOT delete anything
+    if (action === 'delete' || action === 'remove') {
+      console.log('❌ Sales managers cannot delete anything');
+      return false;
+    }
+
+    // Sales Managers CANNOT transfer products
+    if (action === 'transfer') {
+      console.log('❌ Sales managers cannot transfer products');
+      return false;
+    }
+
+    // Check location access - Sales Manager can only access their assigned showroom
+    if (locationId) {
+      const locationIdNum = typeof locationId === 'string' ? parseInt(locationId) : locationId;
+      if (user.assigned_location_id && user.assigned_location_id !== locationIdNum) {
+        console.log('❌ Sales manager cannot access location outside their assignment');
+        return false;
+      }
+    }
+
+    // Module-specific permissions for Sales Manager
+    switch (module.toLowerCase()) {
+      case 'dashboard':
+        // Can view dashboard
+        return action === 'view';
+
+      case 'sales':
+        // Can view, add, and edit sales in their assigned showroom only
+        return ['view', 'add', 'create', 'edit'].includes(action);
+
+      case 'customers':
+        // Can view, add, and edit customers (no delete)
+        return ['view', 'add', 'create', 'edit'].includes(action);
+
+      case 'products':
+        // Can only view products (no add/edit/delete)
+        return action === 'view';
+
+      case 'inventory':
+        // Can view inventory (no add/edit/delete/transfer)
+        return action === 'view';
+
+      case 'reports':
+        // Can view and export reports for their location
+        return action === 'view' || action === 'export';
+
+      case 'suppliers':
+      case 'samples':
+      case 'notifications':
+      case 'activitylogs':
+      case 'settings':
+      case 'users':
+        // Cannot access these modules
+        console.log(`❌ Sales managers cannot access ${module} module`);
+        return false;
+
+      default:
+        // For any other modules, deny access
+        console.log(`❌ Sales managers cannot access unknown module: ${module}`);
+        return false;
+    }
+  }, [user]);
+
+  const hasPermission = useCallback((module: string, action: string = 'view', locationId?: string): boolean => {
+    console.log('🔍 Permission Check:', {
+      module,
+      action,
+      locationId,
+      userRole: user?.role,
+      userExists: !!user,
+      permissionsExists: !!user?.permissions
+    });
+
+    if (!user) {
+      console.log('❌ No user found');
+      return false;
+    }
+
+    // Super admin has all permissions - check this FIRST before checking permissions object
+    if (user.role === 'super_admin') {
+      console.log('✅ Super admin - granting permission');
+      return true;
+    }
+
+    // For other roles, check if permissions exist
+    if (!user.permissions) {
+      console.log('❌ No permissions object found for non-super-admin user');
+      return false;
+    }
 
     // Admin role-specific logic
     if (user.role === 'admin') {
       return hasAdminPermission(module, action, locationId);
     }
 
-    // Sales Manager and Investor logic (existing)
+    // Sales Manager specific logic
+    if (user.role === 'sales_manager') {
+      return hasSalesManagerPermission(module, action, locationId);
+    }
+
+    // Investor and other roles logic (existing)
     const modulePermissions = user.permissions[module.toLowerCase()];
 
     if (!modulePermissions) return false;
@@ -553,7 +722,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return true;
-  }, [user]);
+  }, [user, hasAdminPermission, hasSalesManagerPermission]);
 
   const isRole = useCallback((role: string): boolean => {
     return user?.role === role;
