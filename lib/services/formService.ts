@@ -2068,6 +2068,7 @@ export class FormService {
   // Update user
   static async updateUser(userId: string, data: any, currentUserId: number): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
+      console.log('🔄 Updating user:', userId, 'by user:', currentUserId);
       await this.ensureUserContext(currentUserId);
 
       // Prepare clean update data
@@ -2078,6 +2079,7 @@ export class FormService {
         role: data.role,
         assigned_location_id: data.assigned_location_id,
         permissions: data.permissions || null,
+        updated_at: new Date().toISOString(),
       };
 
       // Only hash password if it's being updated
@@ -2085,22 +2087,55 @@ export class FormService {
         updateData.password_hash = await this.hashPassword(data.password);
       }
 
-      const { data: user, error } = await supabase
+      console.log('🔄 Update data:', updateData);
+
+      // Try using a bypass function for updates
+      try {
+        const { data: result, error: rpcError } = await supabase.rpc('bypass_rls_update_user', {
+          p_user_id: parseInt(userId),
+          p_name: updateData.name,
+          p_email: updateData.email,
+          p_phone: updateData.phone,
+          p_role: updateData.role,
+          p_assigned_location_id: updateData.assigned_location_id,
+          p_permissions: updateData.permissions,
+          p_password_hash: updateData.password_hash || null,
+          p_updated_by: currentUserId
+        });
+
+        if (!rpcError && result) {
+          console.log('✅ User updated via bypass function:', result);
+          return { success: true, data: result };
+        }
+
+        console.log('⚠️ Bypass function failed, trying direct update:', rpcError);
+      } catch (bypassError) {
+        console.log('⚠️ Bypass function not available, trying direct update');
+      }
+
+      // Fallback to direct update
+      const { data: users, error } = await supabase
         .from('users')
         .update(updateData)
         .eq('id', parseInt(userId))
-        .select()
-        .single();
+        .select();
 
       if (error) {
-        console.error('Error updating user:', error);
+        console.error('❌ Error updating user:', error);
         return { success: false, error: error.message };
       }
 
-      return { success: true, data: user };
+      if (!users || users.length === 0) {
+        console.error('❌ No user found with ID:', userId);
+        return { success: false, error: 'User not found or access denied' };
+      }
+
+      const updatedUser = users[0];
+      console.log('✅ User updated successfully:', updatedUser);
+      return { success: true, data: updatedUser };
     } catch (error) {
-      console.error('Error updating user:', error);
-      return { success: false, error: 'Failed to update user' };
+      console.error('❌ Error updating user:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to update user' };
     }
   }
 

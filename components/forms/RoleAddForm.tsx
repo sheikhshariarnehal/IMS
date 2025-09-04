@@ -442,7 +442,7 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
       const userData: FormServiceUserData = {
         name: formData.userName.trim(),
         email: formData.email.trim(),
-        password: formData.password,
+        password: formData.password.trim() || undefined, // Only include password if provided
         role: formData.role.toLowerCase().replace(' ', '_') as 'super_admin' | 'admin' | 'sales_manager' | 'investor',
         assigned_location_id: formData.role === 'Sales Manager' && formData.locations.length > 0 ? parseInt(formData.locations[0]) : undefined,
         phone: formData.mobileNumber?.trim() || undefined,
@@ -478,10 +478,14 @@ export default function RoleAddForm({ visible, onClose, onSubmit, existingRole }
       let result;
       if (existingRole?.id) {
         // Update existing user
+        console.log('🔄 Updating existing user:', existingRole.id, 'with data:', userData);
         result = await FormService.updateUser(existingRole.id, userData, user.id);
+        console.log('📝 Update result:', result);
       } else {
         // Create new user
+        console.log('🔄 Creating new user with data:', userData);
         result = await FormService.createUser(userData, user.id);
+        console.log('📝 Create result:', result);
       }
 
       if (result.success && result.data) {
