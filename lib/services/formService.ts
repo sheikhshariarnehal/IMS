@@ -3,6 +3,7 @@ import type {
   Product, Customer, Supplier, Category, Location,
   Sale, ProductLot
 } from '../supabase';
+import { activityLogger } from './activityLogger';
 
 // Check if we're in demo mode
 const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
@@ -1518,29 +1519,137 @@ export class FormService {
     try {
       await this.ensureUserContext();
 
-      let query = supabase.from('activity_logs').select('*');
+      // Calculate 60 days ago from today
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      const startDate = filters?.dateFrom || sixtyDaysAgo.toISOString();
+      const endDate = filters?.dateTo || new Date().toISOString();
 
+      // Build query with user join to get user names
+      let query = supabase
+        .from('activity_logs')
+        .select(`
+          *,
+          users(name, email, role)
+        `)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
+
+      // Apply filters
       if (filters?.module) {
         query = query.eq('module', filters.module);
       }
       if (filters?.action) {
         query = query.eq('action', filters.action);
       }
+      if (filters?.userId) {
+        query = query.eq('user_id', filters.userId);
+      }
       if (filters?.search) {
         query = query.or(`description.ilike.%${filters.search}%,module.ilike.%${filters.search}%,action.ilike.%${filters.search}%`);
       }
 
-      query = query.order('created_at', { ascending: false }).limit(100);
+      // Order by most recent first, limit to 500 records for performance
+      query = query.order('created_at', { ascending: false }).limit(500);
 
       const { data, error } = await query;
       if (error) {
         console.error('Error fetching activity logs:', error);
-        return [];
+
+        // Fallback query without joins if RLS is blocking
+        console.log('🔄 Trying fallback activity logs query...');
+        const fallbackQuery = supabase
+          .from('activity_logs')
+          .select('*')
+          .gte('created_at', startDate)
+          .lte('created_at', endDate)
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery;
+        if (fallbackError) {
+          console.error('Fallback activity logs query failed:', fallbackError);
+          return [];
+        }
+        return fallbackData || [];
       }
       return data || [];
     } catch (error) {
       console.error('Error fetching activity logs:', error);
       return [];
+    }
+  }
+
+  // Get activity log statistics
+  static async getActivityLogStats(): Promise<any> {
+    try {
+      await this.ensureUserContext();
+
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      // Get total activities in last 60 days
+      const { data: totalData, error: totalError } = await supabase
+        .from('activity_logs')
+        .select('id', { count: 'exact' })
+        .gte('created_at', sixtyDaysAgo.toISOString());
+
+      // Get today's activities
+      const { data: todayData, error: todayError } = await supabase
+        .from('activity_logs')
+        .select('id', { count: 'exact' })
+        .gte('created_at', today.toISOString())
+        .lt('created_at', tomorrow.toISOString());
+
+      // Get critical events (DELETE actions)
+      const { data: criticalData, error: criticalError } = await supabase
+        .from('activity_logs')
+        .select('id', { count: 'exact' })
+        .eq('action', 'DELETE')
+        .gte('created_at', sixtyDaysAgo.toISOString());
+
+      // Get most active user
+      const { data: userActivityData, error: userError } = await supabase
+        .from('activity_logs')
+        .select('user_id, users(name)')
+        .gte('created_at', sixtyDaysAgo.toISOString());
+
+      let mostActiveUser = 'N/A';
+      if (userActivityData && !userError) {
+        const userCounts: Record<string, { count: number; name: string }> = {};
+        userActivityData.forEach((log: any) => {
+          const userId = log.user_id;
+          const userName = log.users?.name || `User ${userId}`;
+          if (!userCounts[userId]) {
+            userCounts[userId] = { count: 0, name: userName };
+          }
+          userCounts[userId].count++;
+        });
+
+        const mostActive = Object.values(userCounts).reduce((max, current) =>
+          current.count > max.count ? current : max, { count: 0, name: 'N/A' });
+        mostActiveUser = mostActive.name;
+      }
+
+      return {
+        totalActivities: totalData?.length || 0,
+        todaysActivities: todayData?.length || 0,
+        criticalEvents: criticalData?.length || 0,
+        mostActiveUser
+      };
+    } catch (error) {
+      console.error('Error fetching activity log stats:', error);
+      return {
+        totalActivities: 0,
+        todaysActivities: 0,
+        criticalEvents: 0,
+        mostActiveUser: 'N/A'
+      };
     }
   }
 

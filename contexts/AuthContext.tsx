@@ -568,17 +568,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await storage.setItem('userSession', JSON.stringify(userSession));
       setUser(userSession);
 
-      // Log login activity (skip in demo mode)
+      // Set current user for activity logging and log login
       if (!isDemoMode) {
-        await supabase
-          .from('activity_logs')
-          .insert({
-            user_id: user.id,
-            action: 'LOGIN',
-            module: 'AUTH',
-            description: 'User logged in successfully',
-            created_at: new Date().toISOString()
-          });
+        const { activityLogger } = await import('@/lib/services/activityLogger');
+        activityLogger.setCurrentUser(user.id);
+        await activityLogger.logLogin(user.email);
       }
 
       return { success: true };
@@ -624,15 +618,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Log logout activity if user exists (skip in demo mode)
       if (user && !isDemoMode) {
-        await supabase
-          .from('activity_logs')
-          .insert({
-            user_id: user.id,
-            action: 'LOGOUT',
-            module: 'AUTH',
-            description: 'User logged out',
-            created_at: new Date().toISOString()
-          });
+        const { activityLogger } = await import('@/lib/services/activityLogger');
+        await activityLogger.logLogout(user.email);
       }
 
       // Clear user context

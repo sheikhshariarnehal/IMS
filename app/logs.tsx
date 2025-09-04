@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     View,
     Text,
@@ -11,6 +11,8 @@ import {
     RefreshControl,
     Alert,
     Modal,
+    Share,
+    Platform,
 } from 'react-native';
 import {
     Search,
@@ -35,6 +37,11 @@ import {
     ChevronDown,
     ChevronUp,
     X,
+    LogIn,
+    LogOut,
+    Trash2,
+    Edit,
+    Plus,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -49,18 +56,22 @@ interface MobileActivityLog {
     id: string;
     userId: string;
     userName: string;
-    userRole: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'VIEW' | 'LOGIN' | 'LOGOUT';
-    module: 'AUTH' | 'PRODUCTS' | 'INVENTORY' | 'SALES' | 'CUSTOMERS' | 'REPORTS' | 'SETTINGS' | 'SAMPLES';
+    userRole?: string;
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'VIEW' | 'LOGIN' | 'LOGOUT' | 'COMPLETE' | 'TRANSFER';
+    module: 'AUTH' | 'PRODUCTS' | 'INVENTORY' | 'SALES' | 'CUSTOMERS' | 'REPORTS' | 'SETTINGS' | 'SAMPLES' | 'TRANSFERS' | 'SALE';
     entityType?: string;
     entityId?: string;
     entityName?: string;
     description: string;
     details?: any;
-    ipAddress: string;
-    userAgent: string;
+    oldValues?: any;
+    newValues?: any;
+    ipAddress?: string;
+    userAgent?: string;
     timestamp: Date;
     severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    creditAmount?: number;
+    debitAmount?: number;
 }
 
 interface LogFilters {
@@ -70,186 +81,32 @@ interface LogFilters {
     action?: string;
     module?: string;
     severity?: string;
+    dateFrom?: string;
+    dateTo?: string;
 }
 
-// Mock activity logs data adapted for mobile
-const mockActivityLogs: MobileActivityLog[] = [
-    {
-        id: '1',
-        userId: '1',
-        userName: 'Super Administrator',
-        userRole: 'super_admin',
-        action: 'CREATE',
-        module: 'PRODUCTS',
-        entityType: 'product',
-        entityId: '1',
-        entityName: 'Premium Velvet Sofa Fabric',
-        description: 'Created new product: Premium Velvet Sofa Fabric',
-        details: {
-            newValues: {
-                name: 'Premium Velvet Sofa Fabric',
-                productCode: '#LWIL02012',
-                category: 'Sofa Fabrics',
-                purchasePrice: 1200,
-                sellingPrice: 1500
-            }
-        },
-        ipAddress: '192.168.1.100',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-17T10:30:00'),
-        severity: 'LOW'
-    },
-    {
-        id: '2',
-        userId: '2',
-        userName: 'Admin User',
-        userRole: 'admin',
-        action: 'UPDATE',
-        module: 'CUSTOMERS',
-        entityType: 'customer',
-        entityId: '3',
-        entityName: 'Modern Home Decor',
-        description: 'Updated customer payment status to Red Listed',
-        details: {
-            oldValues: { paymentStatus: 'Overdue' },
-            newValues: { paymentStatus: 'Red Listed' },
-            changes: ['paymentStatus']
-        },
-        ipAddress: '192.168.1.101',
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-17T09:15:00'),
-        severity: 'HIGH'
-    },
-    {
-        id: '3',
-        userId: '1',
-        userName: 'Super Administrator',
-        userRole: 'super_admin',
-        action: 'DELETE',
-        module: 'INVENTORY',
-        entityType: 'stock_item',
-        entityId: '5',
-        entityName: 'Discontinued Fabric Sample',
-        description: 'Deleted discontinued stock item from inventory',
-        details: {
-            oldValues: {
-                productName: 'Discontinued Fabric Sample',
-                quantity: 0,
-                status: 'Discontinued'
-            }
-        },
-        ipAddress: '192.168.1.100',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-17T08:45:00'),
-        severity: 'MEDIUM'
-    },
-    {
-        id: '4',
-        userId: '3',
-        userName: 'Sales Manager',
-        userRole: 'sales_manager',
-        action: 'VIEW',
-        module: 'REPORTS',
-        entityType: 'report',
-        entityId: 'sales-2025-01',
-        entityName: 'Monthly Sales Report - January 2025',
-        description: 'Viewed monthly sales report',
-        details: {
-            metadata: { reportType: 'sales', period: 'monthly' }
-        },
-        ipAddress: '192.168.1.102',
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15',
-        timestamp: new Date('2025-01-17T08:00:00'),
-        severity: 'LOW'
-    },
-    {
-        id: '5',
-        userId: '1',
-        userName: 'Super Administrator',
-        userRole: 'super_admin',
-        action: 'LOGIN',
-        module: 'AUTH',
-        description: 'User logged into the system',
-        details: {
-            metadata: { loginMethod: 'email_password', sessionId: 'sess_123456' }
-        },
-        ipAddress: '192.168.1.100',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-17T07:30:00'),
-        severity: 'LOW'
-    },
-    {
-        id: '6',
-        userId: '4',
-        userName: 'Investor',
-        userRole: 'investor',
-        action: 'VIEW',
-        module: 'REPORTS',
-        entityType: 'report',
-        entityId: 'financial-2025-01',
-        entityName: 'Financial Report - January 2025',
-        description: 'Viewed financial performance report',
-        details: {
-            metadata: { reportType: 'financial', period: 'monthly' }
-        },
-        ipAddress: '192.168.1.103',
-        userAgent: 'Mozilla/5.0 (iPad; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15',
-        timestamp: new Date('2025-01-16T16:20:00'),
-        severity: 'LOW'
-    },
-    {
-        id: '7',
-        userId: '2',
-        userName: 'Admin User',
-        userRole: 'admin',
-        action: 'CREATE',
-        module: 'SAMPLES',
-        entityType: 'sample',
-        entityId: '12',
-        entityName: 'Leather Sample Set - Premium',
-        description: 'Created new sample set for customer evaluation',
-        details: {
-            newValues: {
-                sampleName: 'Leather Sample Set - Premium',
-                customerName: 'Elite Furniture Co',
-                expectedReturn: '2025-02-01'
-            }
-        },
-        ipAddress: '192.168.1.101',
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-16T14:15:00'),
-        severity: 'LOW'
-    },
-    {
-        id: '8',
-        userId: '1',
-        userName: 'Super Administrator',
-        userRole: 'super_admin',
-        action: 'UPDATE',
-        module: 'SETTINGS',
-        entityType: 'system_setting',
-        entityId: 'notification_config',
-        entityName: 'Notification Configuration',
-        description: 'Updated system notification settings',
-        details: {
-            oldValues: { emailNotifications: false },
-            newValues: { emailNotifications: true },
-            changes: ['emailNotifications']
-        },
-        ipAddress: '192.168.1.100',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        timestamp: new Date('2025-01-16T11:30:00'),
-        severity: 'MEDIUM'
-    }
-];
+interface ActivityStats {
+    totalActivities: number;
+    todaysActivities: number;
+    criticalEvents: number;
+    mostActiveUser: string;
+}
+
+
 
 export default function LogsPage() {
     const { theme } = useTheme();
-    const { user, hasPermission } = useAuth();
+    const { user } = useAuth();
     const router = useRouter();
 
     // State management
     const [logs, setLogs] = useState<MobileActivityLog[]>([]);
+    const [stats, setStats] = useState<ActivityStats>({
+        totalActivities: 0,
+        todaysActivities: 0,
+        criticalEvents: 0,
+        mostActiveUser: 'N/A'
+    });
     const [filters, setFilters] = useState<LogFilters>({});
     const [refreshing, setRefreshing] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -262,52 +119,135 @@ export default function LogsPage() {
         try {
             setLoading(true);
 
-            // Fetch activity logs from database
-            const logsData = await FormService.getActivityLogs(filters);
+            // Fetch activity logs and stats from database
+            const [logsData, statsData] = await Promise.all([
+                FormService.getActivityLogs(filters),
+                FormService.getActivityLogStats()
+            ]);
 
             // Transform database logs to UI format
             const transformedLogs: MobileActivityLog[] = logsData.map((log: any) => ({
                 id: log.id.toString(),
                 userId: log.user_id?.toString() || '',
-                userName: 'User ' + (log.user_id || 'Unknown'), // Would need to join with users table
+                userName: log.users?.name || `User ${log.user_id || 'Unknown'}`,
+                userRole: log.users?.role || 'unknown',
                 action: log.action,
                 module: log.module,
                 description: log.description,
                 entityType: log.entity_type,
                 entityId: log.entity_id?.toString(),
+                entityName: log.entity_name,
                 oldValues: log.old_values,
                 newValues: log.new_values,
                 ipAddress: log.ip_address,
                 userAgent: log.user_agent,
                 timestamp: new Date(log.created_at),
-                severity: log.action === 'DELETE' ? 'high' :
-                         log.action === 'CREATE' ? 'medium' : 'low',
-                category: log.module?.toLowerCase() || 'system',
+                severity: getSeverityFromAction(log.action),
+                creditAmount: log.credit_amount,
+                debitAmount: log.debit_amount,
             }));
 
             setLogs(transformedLogs);
+            setStats(statsData);
         } catch (error) {
             console.error('Failed to load activity logs:', error);
-            Alert.alert('Error', 'Failed to load activity logs');
+            Alert.alert('Error', 'Failed to load activity logs. Please try again.');
         } finally {
             setLoading(false);
         }
     };
 
+    // Helper function to determine severity from action
+    const getSeverityFromAction = (action: string): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' => {
+        switch (action) {
+            case 'DELETE':
+                return 'CRITICAL';
+            case 'UPDATE':
+            case 'COMPLETE':
+                return 'HIGH';
+            case 'CREATE':
+            case 'TRANSFER':
+                return 'MEDIUM';
+            case 'VIEW':
+            case 'LOGIN':
+            case 'LOGOUT':
+            default:
+                return 'LOW';
+        }
+    };
+
     // Load data on component mount
-    React.useEffect(() => {
+    useEffect(() => {
         loadLogs();
     }, []);
 
     // Reload when filters change
-    React.useEffect(() => {
-        loadLogs();
+    useEffect(() => {
+        if (Object.keys(filters).length > 0) {
+            loadLogs();
+        }
     }, [filters]);
 
     const onRefresh = async () => {
         setRefreshing(true);
         await loadLogs();
         setRefreshing(false);
+    };
+
+    // Export functionality
+    const handleExport = async () => {
+        try {
+            const csvContent = generateCSVContent(filteredLogs);
+            const fileName = `activity_logs_${new Date().toISOString().split('T')[0]}.csv`;
+
+            if (Platform.OS === 'web') {
+                // Web export
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                link.click();
+                URL.revokeObjectURL(url);
+            } else {
+                // Mobile export via Share
+                await Share.share({
+                    message: csvContent,
+                    title: 'Activity Logs Export',
+                });
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            Alert.alert('Export Failed', 'Unable to export activity logs. Please try again.');
+        }
+    };
+
+    const generateCSVContent = (logs: MobileActivityLog[]): string => {
+        const headers = [
+            'Timestamp',
+            'User',
+            'Action',
+            'Module',
+            'Description',
+            'Entity Type',
+            'Entity Name',
+            'Severity',
+            'IP Address'
+        ];
+
+        const rows = logs.map(log => [
+            log.timestamp.toISOString(),
+            log.userName,
+            log.action,
+            log.module,
+            log.description.replace(/,/g, ';'), // Replace commas to avoid CSV issues
+            log.entityType || '',
+            log.entityName || '',
+            log.severity,
+            log.ipAddress || ''
+        ]);
+
+        return [headers, ...rows].map(row => row.join(',')).join('\n');
     };
 
     // Filtered logs
@@ -337,34 +277,8 @@ export default function LogsPage() {
         });
     }, [logs, filters]);
 
-    // Analytics
-    const analytics = useMemo(() => {
-        const totalLogs = logs.length;
-        const todayLogs = logs.filter(log => {
-            const today = new Date();
-            return log.timestamp.toDateString() === today.toDateString();
-        }).length;
-        const criticalLogs = logs.filter(log => log.severity === 'CRITICAL').length;
-
-        const mostActiveUser = logs.reduce((acc, log) => {
-            acc[log.userName] = (acc[log.userName] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>);
-
-        const mostActiveUserName = Object.keys(mostActiveUser).reduce((a, b) =>
-            mostActiveUser[a] > mostActiveUser[b] ? a : b, Object.keys(mostActiveUser)[0]
-        );
-
-        return {
-            totalLogs,
-            todayLogs,
-            criticalLogs,
-            mostActiveUser: mostActiveUserName,
-        };
-    }, [logs]);
-
-    // Check if user has permission to view logs
-    if (!hasPermission('activityLogs', 'view') && user?.role !== 'super_admin') {
+    // Check if user has permission to view logs - Only Super Admins
+    if (user?.role !== 'super_admin') {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
                 <TopNavBar
@@ -377,7 +291,9 @@ export default function LogsPage() {
                         Access Denied
                     </Text>
                     <Text style={[styles.accessDeniedText, { color: theme.colors.text.secondary }]}>
-                        Only Super Administrators and Admins can view activity logs.
+                        Access to this section is restricted to Super Admins only.
+                        {'\n\n'}Other users will not be able to view this.
+                        {'\n\n'}Currently, the logs display data for the last 60 days only, as showing too much data could overload the database due to frequent changes throughout the day.
                     </Text>
                 </View>
                 <BottomNavBar activeTab="logs" />
@@ -398,13 +314,15 @@ export default function LogsPage() {
 
     const getActionIcon = (action: string) => {
         switch (action) {
-            case 'CREATE': return CheckCircle;
-            case 'UPDATE': return Info;
-            case 'DELETE': return XCircle;
+            case 'CREATE': return Plus;
+            case 'UPDATE': return Edit;
+            case 'DELETE': return Trash2;
             case 'VIEW': return Eye;
-            case 'LOGIN': return User;
-            case 'LOGOUT': return User;
-            default: return Activity;
+            case 'LOGIN': return LogIn;
+            case 'LOGOUT': return LogOut;
+            case 'COMPLETE': return CheckCircle;
+            case 'TRANSFER': return Activity;
+            default: return Info;
         }
     };
 
@@ -413,11 +331,13 @@ export default function LogsPage() {
             case 'AUTH': return Shield;
             case 'PRODUCTS': return Package;
             case 'INVENTORY': return Database;
-            case 'SALES': return ShoppingCart;
+            case 'SALES':
+            case 'SALE': return ShoppingCart;
             case 'CUSTOMERS': return Users;
             case 'REPORTS': return FileText;
             case 'SETTINGS': return Settings;
             case 'SAMPLES': return Package;
+            case 'TRANSFERS': return Activity;
             default: return Activity;
         }
     };
@@ -441,10 +361,13 @@ export default function LogsPage() {
                         <Activity size={24} color={theme.colors.primary} />
                     </View>
                     <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>
-                        {analytics.totalLogs}
+                        {loading ? '...' : stats.totalActivities.toLocaleString()}
                     </Text>
                     <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>
                         Total Activities
+                    </Text>
+                    <Text style={[styles.kpiSubLabel, { color: theme.colors.text.muted }]}>
+                        Last 60 days
                     </Text>
                 </View>
 
@@ -453,10 +376,13 @@ export default function LogsPage() {
                         <Calendar size={24} color={theme.colors.status.info} />
                     </View>
                     <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>
-                        {analytics.todayLogs}
+                        {loading ? '...' : stats.todaysActivities.toLocaleString()}
                     </Text>
                     <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>
                         Today's Activities
+                    </Text>
+                    <Text style={[styles.kpiSubLabel, { color: theme.colors.text.muted }]}>
+                        {new Date().toLocaleDateString()}
                     </Text>
                 </View>
             </View>
@@ -467,10 +393,13 @@ export default function LogsPage() {
                         <AlertTriangle size={24} color={theme.colors.status.error} />
                     </View>
                     <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>
-                        {analytics.criticalLogs}
+                        {loading ? '...' : stats.criticalEvents.toLocaleString()}
                     </Text>
                     <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>
                         Critical Events
+                    </Text>
+                    <Text style={[styles.kpiSubLabel, { color: theme.colors.text.muted }]}>
+                        Delete actions
                     </Text>
                 </View>
 
@@ -478,11 +407,14 @@ export default function LogsPage() {
                     <View style={[styles.kpiIcon, { backgroundColor: theme.colors.status.success + '20' }]}>
                         <User size={24} color={theme.colors.status.success} />
                     </View>
-                    <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>
-                        {analytics.mostActiveUser?.split(' ')[0] || 'N/A'}
+                    <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]} numberOfLines={1}>
+                        {loading ? '...' : (stats.mostActiveUser?.split(' ')[0] || 'N/A')}
                     </Text>
                     <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>
                         Most Active User
+                    </Text>
+                    <Text style={[styles.kpiSubLabel, { color: theme.colors.text.muted }]}>
+                        By activity count
                     </Text>
                 </View>
             </View>
@@ -529,7 +461,7 @@ export default function LogsPage() {
                 <View style={styles.filterGroup}>
                     <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>Action</Text>
                     <View style={styles.filterChips}>
-                        {['CREATE', 'UPDATE', 'DELETE', 'VIEW', 'LOGIN'].map((action) => (
+                        {['CREATE', 'UPDATE', 'DELETE', 'VIEW', 'LOGIN', 'LOGOUT', 'COMPLETE', 'TRANSFER'].map((action) => (
                             <TouchableOpacity
                                 key={action}
                                 style={[
@@ -561,7 +493,7 @@ export default function LogsPage() {
                 <View style={styles.filterGroup}>
                     <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>Module</Text>
                     <View style={styles.filterChips}>
-                        {['AUTH', 'PRODUCTS', 'INVENTORY', 'SALES', 'CUSTOMERS', 'REPORTS'].map((module) => (
+                        {['AUTH', 'PRODUCTS', 'INVENTORY', 'SALES', 'SALE', 'CUSTOMERS', 'REPORTS', 'SETTINGS', 'SAMPLES', 'TRANSFERS'].map((module) => (
                             <TouchableOpacity
                                 key={module}
                                 style={[
@@ -713,8 +645,10 @@ export default function LogsPage() {
         <SharedLayout title="Activity Logs">
             <TouchableOpacity
                 style={[styles.headerButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+                onPress={handleExport}
+                disabled={loading || filteredLogs.length === 0}
             >
-                <Download size={20} color={theme.colors.primary} />
+                <Download size={20} color={loading || filteredLogs.length === 0 ? theme.colors.text.muted : theme.colors.primary} />
             </TouchableOpacity>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -785,7 +719,7 @@ export default function LogsPage() {
 
                                 <View style={styles.detailMeta}>
                                     <Text style={[styles.detailMetaText, { color: theme.colors.text.muted }]}>
-                                        User: {selectedLog.userName} ({selectedLog.userRole.replace('_', ' ').toUpperCase()})
+                                        User: {selectedLog.userName} ({selectedLog.userRole?.replace('_', ' ').toUpperCase() || 'Unknown'})
                                     </Text>
                                     <Text style={[styles.detailMetaText, { color: theme.colors.text.muted }]}>
                                         Action: {selectedLog.action}
@@ -890,6 +824,12 @@ const styles = StyleSheet.create({
     kpiLabel: {
         fontSize: 12,
         textAlign: 'center',
+        marginBottom: 2,
+    },
+    kpiSubLabel: {
+        fontSize: 10,
+        textAlign: 'center',
+        fontStyle: 'italic',
     },
     filterContainer: {
         flexDirection: 'row',
