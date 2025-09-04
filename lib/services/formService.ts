@@ -253,7 +253,7 @@ export class FormService {
     }
   }
 
-  static async getProducts(filters?: any): Promise<any[]> {
+  static async getProducts(filters?: any, userId?: number): Promise<any[]> {
     try {
       // Return mock data in demo mode
       if (isDemoMode) {
@@ -261,7 +261,11 @@ export class FormService {
         return this.getMockProducts(filters);
       }
 
-      await this.ensureUserContext();
+      if (userId) {
+        await this.ensureUserContext(userId);
+      } else {
+        console.warn('⚠️ No userId provided to getProducts - RLS policies may not work correctly');
+      }
 
       let query = supabase
         .from('products')
@@ -1281,7 +1285,7 @@ export class FormService {
     }
   }
 
-  static async getSalesSummary(filters?: any): Promise<any[]> {
+  static async getSalesSummary(filters?: any, userId?: number): Promise<any[]> {
     try {
       // Return demo data if in demo mode
       if (isDemoMode) {
@@ -1326,7 +1330,11 @@ export class FormService {
         ];
       }
 
-      await this.ensureUserContext();
+      if (userId) {
+        await this.ensureUserContext(userId);
+      } else {
+        console.warn('⚠️ No userId provided to getSalesSummary - RLS policies may not work correctly');
+      }
 
       // Query the sales table directly with joins to get all needed fields
       let query = supabase

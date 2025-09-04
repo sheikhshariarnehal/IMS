@@ -322,7 +322,7 @@ export default function SalesPage() {
       }
 
       // Load sales summary
-      const salesData = await FormService.getSalesSummary(enhancedFilters);
+      const salesData = await FormService.getSalesSummary(enhancedFilters, user?.id);
       setSales(salesData.map((sale: any) => ({
         id: sale.id?.toString() || '',
         saleNumber: sale.sale_number || '',

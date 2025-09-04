@@ -153,6 +153,12 @@ const TransferPage = React.memo(function TransferPage() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
+
+      // Set user context for RLS policies
+      if (user?.id) {
+        await supabase.rpc('set_user_context', { user_id: user.id });
+      }
+
       const { data, error } = await supabase
         .from('products')
         .select(`
@@ -196,6 +202,11 @@ const TransferPage = React.memo(function TransferPage() {
 
   const fetchTransferRequests = async () => {
     try {
+      // Set user context for RLS policies
+      if (user?.id) {
+        await supabase.rpc('set_user_context', { user_id: user.id });
+      }
+
       const { data, error } = await supabase
         .from('transfers')
         .select(`

@@ -98,7 +98,7 @@ const ProductsPage = React.memo(function ProductsPage() {
       }
 
       // Fetch products from database
-      const productsData = await FormService.getProducts(enhancedFilters);
+      const productsData = await FormService.getProducts(enhancedFilters, user?.id);
 
       // Transform database products to UI format
       const transformedProducts: Product[] = productsData.map((product: any) => ({
