@@ -64,7 +64,7 @@ interface ProductFilters {
 
 const ProductsPage = React.memo(function ProductsPage() {
   const { theme } = useTheme();
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, getAccessibleLocations } = useAuth();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false); // Instant loading - no delays
@@ -90,22 +90,44 @@ const ProductsPage = React.memo(function ProductsPage() {
     try {
       setLoading(true);
 
+      console.log('🔄 Products page: Loading products...');
+      console.log('👤 Current user:', { id: user?.id, role: user?.role });
+
+      // Get accessible locations for current user
+      const accessibleLocations = getAccessibleLocations();
+      console.log('📍 Accessible locations for user:', accessibleLocations);
+
       // Apply location filtering for admin and sales manager users
       let enhancedFilters = { ...filters };
-      if (user?.role === 'admin') {
-        const adminLocations = user.permissions?.locations || [];
-        if (adminLocations.length > 0 && !filters.location) {
-          // If admin has location restrictions and no specific location filter is set,
-          // we'll let the RLS handle the filtering at the database level
-          // The RLS policies should already restrict products to admin's locations
+
+      // Apply location filtering for non-super admin users
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        console.log('🔒 Applying location filter for role:', user?.role);
+
+        if (user?.role === 'sales_manager') {
+          // Sales managers can only see products from their assigned location
+          enhancedFilters.location = accessibleLocations[0]; // Sales manager has only one location
+        } else if (user?.role === 'admin') {
+          // Admins can see products from their accessible locations
+          if (filters.location) {
+            // If a specific location filter is set, verify it's accessible
+            if (!accessibleLocations.includes(filters.location)) {
+              console.warn('⚠️ Admin trying to access non-permitted location, resetting filter');
+              enhancedFilters.location = accessibleLocations; // Use all accessible locations
+            }
+            // If valid location filter is set, keep it as is
+          } else {
+            // If no specific location filter is set, filter by all accessible locations
+            enhancedFilters.location = accessibleLocations;
+          }
         }
-      } else if (user?.role === 'sales_manager' && user.assigned_location_id) {
-        // For sales managers, always filter by their assigned location
-        enhancedFilters.location = user.assigned_location_id.toString();
       }
+
+      console.log('🔍 Enhanced filters:', enhancedFilters);
 
       // Fetch products from database
       const productsData = await FormService.getProducts(enhancedFilters, user?.id);
+      console.log('📦 Raw products data:', productsData.length, 'products found');
 
       // Transform database products to UI format
       const transformedProducts: Product[] = productsData.map((product: any) => ({
@@ -135,7 +157,7 @@ const ProductsPage = React.memo(function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, user?.id, user?.role, getAccessibleLocations]);
 
   useEffect(() => {
     loadProducts();

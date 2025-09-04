@@ -298,7 +298,7 @@ const mockDuePayments: DuePayment[] = [
 
 export default function SalesPage() {
   const { theme } = useTheme();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, getAccessibleLocations } = useAuth();
   const [activeTab, setActiveTab] = useState<'sales' | 'due-payments' | 'invoices'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
   const [duePayments, setDuePayments] = useState<DuePayment[]>([]);
@@ -313,16 +313,44 @@ export default function SalesPage() {
   const loadSalesData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Sales page: Loading sales data...');
+      console.log('👤 Current user:', { id: user?.id, role: user?.role });
 
-      // Apply location filtering for sales managers
+      // Get accessible locations for current user
+      const accessibleLocations = getAccessibleLocations();
+      console.log('📍 Accessible locations for user:', accessibleLocations);
+
+      // Apply location filtering for admin and sales manager users
       let enhancedFilters = { ...filters };
-      if (user?.role === 'sales_manager' && user.assigned_location_id) {
-        // For sales managers, always filter by their assigned location
-        enhancedFilters.location = user.assigned_location_id.toString();
+
+      // Apply location filtering for non-super admin users
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        console.log('🔒 Applying location filter for role:', user?.role);
+
+        if (user?.role === 'sales_manager') {
+          // Sales managers can only see sales from their assigned location
+          enhancedFilters.location = accessibleLocations[0]; // Sales manager has only one location
+        } else if (user?.role === 'admin') {
+          // Admins can see sales from their accessible locations
+          if (filters.location) {
+            // If a specific location filter is set, verify it's accessible
+            if (!accessibleLocations.includes(filters.location)) {
+              console.warn('⚠️ Admin trying to access non-permitted location, resetting filter');
+              enhancedFilters.location = accessibleLocations; // Use all accessible locations
+            }
+            // If valid location filter is set, keep it as is
+          } else {
+            // If no specific location filter is set, filter by all accessible locations
+            enhancedFilters.location = accessibleLocations;
+          }
+        }
       }
+
+      console.log('🔍 Enhanced filters for sales:', enhancedFilters);
 
       // Load sales summary
       const salesData = await FormService.getSalesSummary(enhancedFilters, user?.id);
+      console.log('📊 Raw sales data:', salesData.length, 'sales found');
       setSales(salesData.map((sale: any) => ({
         id: sale.id?.toString() || '',
         saleNumber: sale.sale_number || '',

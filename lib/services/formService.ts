@@ -264,7 +264,15 @@ export class FormService {
         query = query.eq('category_id', filters.category);
       }
       if (filters?.location) {
-        query = query.eq('location_id', filters.location);
+        // Handle both single location and multiple locations
+        if (Array.isArray(filters.location)) {
+          const locationIds = filters.location.map(id => parseInt(id));
+          query = query.in('location_id', locationIds);
+          console.log('🔍 Filtering products by multiple locations:', locationIds);
+        } else {
+          query = query.eq('location_id', parseInt(filters.location));
+          console.log('🔍 Filtering products by single location:', filters.location);
+        }
       }
 
       query = query.order('created_at', { ascending: false });
@@ -1337,6 +1345,17 @@ export class FormService {
       }
       if (filters?.paymentStatus) {
         query = query.eq('payment_status', filters.paymentStatus);
+      }
+      if (filters?.location) {
+        // Handle both single location and multiple locations
+        if (Array.isArray(filters.location)) {
+          const locationIds = filters.location.map(id => parseInt(id));
+          query = query.in('location_id', locationIds);
+          console.log('🔍 Filtering sales by multiple locations:', locationIds);
+        } else {
+          query = query.eq('location_id', parseInt(filters.location));
+          console.log('🔍 Filtering sales by single location:', filters.location);
+        }
       }
 
       query = query.order('created_at', { ascending: false });

@@ -972,19 +972,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getAccessibleLocations = useCallback((): string[] => {
     if (!user) return [];
 
-    // Super admin can access all locations
+    // Super admin can access all locations (return empty array means no restrictions)
     if (user.role === 'super_admin') return [];
 
-    // Return assigned locations as strings
+    console.log('🔍 Getting accessible locations for user:', {
+      role: user.role,
+      permissions: user.permissions,
+      assigned_location_id: user.assigned_location_id,
+      assignedLocations: user.assignedLocations
+    });
+
+    // For admin users, check permissions.locations
+    if (user.role === 'admin' && user.permissions?.locations && user.permissions.locations.length > 0) {
+      const locations = user.permissions.locations.map(id => id.toString());
+      console.log('📍 Admin accessible locations from permissions:', locations);
+      return locations;
+    }
+
+    // For sales managers, use assigned_location_id
+    if (user.role === 'sales_manager' && user.assigned_location_id) {
+      const locations = [user.assigned_location_id.toString()];
+      console.log('📍 Sales manager accessible location:', locations);
+      return locations;
+    }
+
+    // Fallback: Return assigned locations as strings (legacy support)
     if (user.assignedLocations && user.assignedLocations.length > 0) {
-      return user.assignedLocations.map(id => id.toString());
+      const locations = user.assignedLocations.map(id => id.toString());
+      console.log('📍 Fallback accessible locations:', locations);
+      return locations;
     }
 
-    // Return single assigned location
+    // Fallback: Return single assigned location (legacy support)
     if (user.assigned_location_id) {
-      return [user.assigned_location_id.toString()];
+      const locations = [user.assigned_location_id.toString()];
+      console.log('📍 Fallback single location:', locations);
+      return locations;
     }
 
+    console.log('⚠️ No accessible locations found for user');
     return [];
   }, [user]);
 

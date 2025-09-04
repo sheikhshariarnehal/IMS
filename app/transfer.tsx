@@ -63,6 +63,8 @@ interface TransferRequest {
   requestedBy: string;
   requestedAt: Date;
   status: 'requested' | 'approved' | 'rejected' | 'completed' | 'in_transit';
+  fromLocationId?: number;
+  toLocationId?: number;
 }
 
 // Mock data
@@ -122,7 +124,7 @@ const locations = [
 
 const TransferPage = React.memo(function TransferPage() {
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, getAccessibleLocations } = useAuth();
 
   // State
   const [activeTab, setActiveTab] = useState('products');
@@ -164,7 +166,11 @@ const TransferPage = React.memo(function TransferPage() {
         console.warn('⚠️ No user ID available for setting context');
       }
 
-      const { data, error } = await supabase
+      // Get accessible locations for current user
+      const accessibleLocations = getAccessibleLocations();
+      console.log('📍 Accessible locations for user:', accessibleLocations);
+
+      let query = supabase
         .from('products')
         .select(`
           id,
@@ -177,8 +183,17 @@ const TransferPage = React.memo(function TransferPage() {
           locations(name),
           categories(name)
         `)
-        .gt('total_stock', 0)
-        .order('name');
+        .gt('total_stock', 0);
+
+      // Apply location filtering for non-super admin users
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        console.log('🔒 Applying location filter for role:', user?.role);
+        console.log('📍 Filtering by accessible locations:', accessibleLocations);
+        const locationIds = accessibleLocations.map(id => parseInt(id));
+        query = query.in('location_id', locationIds);
+      }
+
+      const { data, error } = await query.order('name');
 
       if (error) {
         console.error('❌ Error fetching products:', error);
@@ -201,6 +216,11 @@ const TransferPage = React.memo(function TransferPage() {
       })) || [];
 
       console.log('✅ Formatted products:', formattedProducts.length, 'products');
+      console.log('📍 Products by location:', formattedProducts.reduce((acc, p) => {
+        acc[p.location_name] = (acc[p.location_name] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>));
+
       setProducts(formattedProducts);
     } catch (error) {
       console.error('❌ Error fetching products:', error);
@@ -216,7 +236,11 @@ const TransferPage = React.memo(function TransferPage() {
         await supabase.rpc('set_user_context', { user_id: user.id });
       }
 
-      const { data, error } = await supabase
+      // Get accessible locations for current user
+      const accessibleLocations = getAccessibleLocations();
+      console.log('📍 Fetching transfers for accessible locations:', accessibleLocations);
+
+      let query = supabase
         .from('transfers')
         .select(`
           id,
@@ -225,12 +249,23 @@ const TransferPage = React.memo(function TransferPage() {
           transfer_status,
           notes,
           requested_at,
+          from_location_id,
+          to_location_id,
           products(name),
           from_location:locations!transfers_from_location_id_fkey(name),
           to_location:locations!transfers_to_location_id_fkey(name),
           requested_by_user:users!transfers_requested_by_fkey(name)
-        `)
-        .order('requested_at', { ascending: false });
+        `);
+
+      // Apply location filtering for non-super admin users
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        console.log('🔒 Applying location filter for transfers');
+        const locationIds = accessibleLocations.map(id => parseInt(id));
+        // Show transfers where user has access to either source OR destination location
+        query = query.or(`from_location_id.in.(${locationIds.join(',')}),to_location_id.in.(${locationIds.join(',')})`);
+      }
+
+      const { data, error } = await query.order('requested_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching transfer requests:', error);
@@ -247,8 +282,11 @@ const TransferPage = React.memo(function TransferPage() {
         requestedBy: transfer.requested_by_user?.name || 'Unknown User',
         requestedAt: new Date(transfer.requested_at),
         status: transfer.transfer_status as 'pending' | 'approved' | 'rejected' | 'completed',
+        fromLocationId: transfer.from_location_id,
+        toLocationId: transfer.to_location_id,
       })) || [];
 
+      console.log('📋 Transfer requests found:', formattedRequests.length);
       setTransferRequests(formattedRequests);
     } catch (error) {
       console.error('Error fetching transfer requests:', error);

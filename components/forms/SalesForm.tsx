@@ -38,6 +38,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useLocations } from '@/contexts/LocationContext';
 import { FormService, type SaleFormData as FormServiceSaleData, type SaleItemFormData } from '@/lib/services/formService';
 import { supabase } from '@/lib/supabase';
 import type { Product, Customer, ProductLot } from '@/lib/supabase';
@@ -76,6 +77,7 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onS
   const { theme } = useTheme();
   const { hasPermission, user } = useAuth();
   const { showToast } = useToast();
+  const { showrooms } = useLocations();
 
   // Check if user can create sales at specific location
   const canCreateSaleAtLocation = useCallback((locationId: string) => {
@@ -538,10 +540,29 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onS
       }
 
       // Check location-specific permissions for admin and sales manager users
+      let saleLocationId = selectedProduct?.location_id;
+
       if (user.role === 'admin' && selectedProduct?.location_id) {
+        // For admins: if product is in warehouse, check if they have any showroom access
+        // and use the first accessible showroom as the sale location
         if (!canCreateSaleAtLocation(selectedProduct.location_id)) {
-          showToast('You do not have permission to create sales at this location. Admins can only create sales at showrooms they have access to.', 'error');
-          return;
+          // Check if admin has access to any showroom for warehouse products
+          const adminLocations = user.permissions?.locations || [];
+
+          // Get showroom IDs from LocationContext
+          const showroomIds = showrooms.map(showroom => showroom.id);
+          const accessibleShowrooms = adminLocations.filter(locationId =>
+            showroomIds.includes(locationId)
+          );
+
+          if (accessibleShowrooms.length === 0) {
+            showToast('You do not have permission to create sales. Admins need access to at least one showroom to create sales.', 'error');
+            return;
+          }
+
+          // Use the first accessible showroom as the sale location
+          saleLocationId = accessibleShowrooms[0].toString();
+          console.log(`📍 Admin selling warehouse product: using showroom ${saleLocationId} for sale location instead of warehouse ${selectedProduct.location_id}`);
         }
       } else if (user.role === 'sales_manager' && selectedProduct?.location_id) {
         // Sales managers can only create sales at their assigned location
@@ -584,7 +605,7 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onS
         payment_status: formData.paymentType === 'full' ? 'paid' : (formData.paymentType === 'partial' ? 'partial' : 'pending'),
         sale_status: 'finalized',
         delivery_person: formData.notes || undefined,
-        location_id: selectedProduct?.location_id ? parseInt(selectedProduct.location_id) : undefined,
+        location_id: saleLocationId ? parseInt(saleLocationId) : undefined,
       };
 
       console.log('💾 Sale data to be created:', saleData);
