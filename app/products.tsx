@@ -11,6 +11,7 @@ import {
   FlatList,
   Alert,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import {
   Plus,
@@ -54,9 +55,9 @@ interface Product {
 
 interface ProductFilters {
   search: string;
-  category: string;
+  category: string; // Will store category ID
   status: string;
-  location: string;
+  location: string; // Will store location ID
 }
 
 // Product interfaces are now imported from product-service
@@ -76,6 +77,12 @@ const ProductsPage = React.memo(function ProductsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedView, setSelectedView] = useState<'list' | 'grid'>('list');
   const [showProductForm, setShowProductForm] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Filter options data
+  const [categories, setCategories] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [loadingFilterData, setLoadingFilterData] = useState(false);
 
 
   // Load mock products for UI demo
@@ -139,11 +146,86 @@ const ProductsPage = React.memo(function ProductsPage() {
     loadProducts();
   }, [loadProducts, filters]);
 
+  // Load filter options data
+  const loadFilterOptions = useCallback(async () => {
+    try {
+      setLoadingFilterData(true);
+
+      const [categoriesData, locationsData] = await Promise.all([
+        FormService.getCategories(),
+        FormService.getLocations()
+      ]);
+
+      setCategories(categoriesData);
+
+      // Filter locations based on user permissions
+      let filteredLocations = locationsData.data || locationsData;
+      if (user?.role === 'admin') {
+        const adminLocations = user.permissions?.locations || [];
+        if (adminLocations.length > 0) {
+          filteredLocations = filteredLocations.filter((location: any) =>
+            adminLocations.includes(location.id)
+          );
+        }
+      } else if (user?.role === 'sales_manager' && user.assigned_location_id) {
+        // For sales managers, only show their assigned location
+        filteredLocations = filteredLocations.filter((location: any) =>
+          location.id === user.assigned_location_id
+        );
+      }
+
+      setLocations(filteredLocations);
+    } catch (error) {
+      console.error('Error loading filter options:', error);
+    } finally {
+      setLoadingFilterData(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadFilterOptions();
+  }, [loadFilterOptions]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProducts();
     setRefreshing(false);
   }, [loadProducts]);
+
+  // Filter products based on current filters
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      // Search filter - check name and product code
+      if (filters.search &&
+          !product.name.toLowerCase().includes(filters.search.toLowerCase()) &&
+          !product.productCode.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false;
+      }
+
+      // Category filter - compare by category name since we display category names
+      if (filters.category) {
+        const selectedCategory = categories.find(cat => cat.id.toString() === filters.category);
+        if (selectedCategory && product.category !== selectedCategory.name) {
+          return false;
+        }
+      }
+
+      // Status filter
+      if (filters.status && product.status !== filters.status) {
+        return false;
+      }
+
+      // Location filter - compare by location name since we display location names
+      if (filters.location) {
+        const selectedLocation = locations.find(loc => loc.id.toString() === filters.location);
+        if (selectedLocation && product.location !== selectedLocation.name) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [products, filters, categories, locations]);
 
   const getStatusColor = useCallback((status: string) => {
     switch (status) {
@@ -301,6 +383,218 @@ const ProductsPage = React.memo(function ProductsPage() {
     setShowProductForm(true); // Use complex form
   }, [hasPermission]);
 
+  // Clear all filters
+  const clearFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      category: '',
+      status: '',
+      location: ''
+    });
+  }, []);
+
+  // Apply filters and close modal
+  const applyFilters = useCallback(() => {
+    setShowFilters(false);
+  }, []);
+
+  // Get active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.category) count++;
+    if (filters.status) count++;
+    if (filters.location) count++;
+    return count;
+  }, [filters]);
+
+  // Render filter modal
+  const renderFilterModal = () => {
+    const statusOptions = ['In Stock', 'Low Stock', 'Out of Stock'];
+
+    return (
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <SafeAreaView style={[styles.filterModal, { backgroundColor: theme.colors.background }]}>
+          <View style={[styles.filterHeader, { borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.filterTitle, { color: theme.colors.text.primary }]}>
+              Filter Products
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowFilters(false)}
+              style={styles.closeButton}
+            >
+              <Text style={[styles.closeButtonText, { color: theme.colors.primary }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.filterContent}>
+            {/* Category Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Category
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: !filters.category ? theme.colors.primary : theme.colors.backgroundSecondary,
+                      borderColor: !filters.category ? theme.colors.primary : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => setFilters(prev => ({ ...prev, category: '' }))}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: !filters.category ? theme.colors.background : theme.colors.text.primary }
+                  ]}>
+                    All Categories
+                  </Text>
+                </TouchableOpacity>
+                {categories.map((category) => (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.category === category.id.toString() ? theme.colors.primary : theme.colors.backgroundSecondary,
+                        borderColor: filters.category === category.id.toString() ? theme.colors.primary : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => setFilters(prev => ({ ...prev, category: category.id.toString() }))}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      { color: filters.category === category.id.toString() ? theme.colors.background : theme.colors.text.primary }
+                    ]}>
+                      {category.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Status Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Stock Status
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: !filters.status ? theme.colors.primary : theme.colors.backgroundSecondary,
+                      borderColor: !filters.status ? theme.colors.primary : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => setFilters(prev => ({ ...prev, status: '' }))}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: !filters.status ? theme.colors.background : theme.colors.text.primary }
+                  ]}>
+                    All Status
+                  </Text>
+                </TouchableOpacity>
+                {statusOptions.map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.status === status ? theme.colors.primary : theme.colors.backgroundSecondary,
+                        borderColor: filters.status === status ? theme.colors.primary : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => setFilters(prev => ({ ...prev, status }))}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      { color: filters.status === status ? theme.colors.background : theme.colors.text.primary }
+                    ]}>
+                      {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Location Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Location
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: !filters.location ? theme.colors.primary : theme.colors.backgroundSecondary,
+                      borderColor: !filters.location ? theme.colors.primary : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => setFilters(prev => ({ ...prev, location: '' }))}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: !filters.location ? theme.colors.background : theme.colors.text.primary }
+                  ]}>
+                    All Locations
+                  </Text>
+                </TouchableOpacity>
+                {locations.map((location) => (
+                  <TouchableOpacity
+                    key={location.id}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.location === location.id.toString() ? theme.colors.primary : theme.colors.backgroundSecondary,
+                        borderColor: filters.location === location.id.toString() ? theme.colors.primary : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => setFilters(prev => ({ ...prev, location: location.id.toString() }))}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      { color: filters.location === location.id.toString() ? theme.colors.background : theme.colors.text.primary }
+                    ]}>
+                      {location.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </ScrollView>
+
+          {/* Filter Actions */}
+          <View style={[styles.filterActions, { borderTopColor: theme.colors.border }]}>
+            <TouchableOpacity
+              style={[styles.clearButton, { borderColor: theme.colors.border }]}
+              onPress={clearFilters}
+            >
+              <Text style={[styles.clearButtonText, { color: theme.colors.text.secondary }]}>
+                Clear All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.applyButton, { backgroundColor: theme.colors.primary }]}
+              onPress={applyFilters}
+            >
+              <Text style={[styles.applyButtonText, { color: theme.colors.background }]}>
+                Apply Filters
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
   const handleAddProductComplex = useCallback(() => {
     if (!hasPermission('products', 'add')) {
       Alert.alert('Permission Denied', 'You do not have permission to add products.');
@@ -385,14 +679,77 @@ const ProductsPage = React.memo(function ProductsPage() {
         </View>
         <TouchableOpacity
           style={[styles.filterButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+          onPress={() => setShowFilters(true)}
         >
           <Filter size={20} color={theme.colors.primary} />
+          {activeFilterCount > 0 && (
+            <View style={[styles.filterBadge, { backgroundColor: theme.colors.status.error }]}>
+              <Text style={[styles.filterBadgeText, { color: theme.colors.background }]}>
+                {activeFilterCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
+      {/* Active Filters */}
+      {(filters.category || filters.status || filters.location) && (
+        <View style={[styles.activeFiltersContainer, { backgroundColor: theme.colors.card }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activeFiltersScroll}>
+            {filters.category && (
+              <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary }]}>
+                <Text style={[styles.activeFilterText, { color: theme.colors.primary }]}>
+                  Category: {categories.find(cat => cat.id.toString() === filters.category)?.name || filters.category}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setFilters(prev => ({ ...prev, category: '' }))}
+                  style={styles.removeFilterButton}
+                >
+                  <Text style={[styles.removeFilterText, { color: theme.colors.primary }]}>×</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {filters.status && (
+              <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary }]}>
+                <Text style={[styles.activeFilterText, { color: theme.colors.primary }]}>
+                  Status: {filters.status}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setFilters(prev => ({ ...prev, status: '' }))}
+                  style={styles.removeFilterButton}
+                >
+                  <Text style={[styles.removeFilterText, { color: theme.colors.primary }]}>×</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {filters.location && (
+              <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary }]}>
+                <Text style={[styles.activeFilterText, { color: theme.colors.primary }]}>
+                  Location: {locations.find(loc => loc.id.toString() === filters.location)?.name || filters.location}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setFilters(prev => ({ ...prev, location: '' }))}
+                  style={styles.removeFilterButton}
+                >
+                  <Text style={[styles.removeFilterText, { color: theme.colors.primary }]}>×</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.clearAllFiltersButton, { borderColor: theme.colors.text.secondary }]}
+              onPress={clearFilters}
+            >
+              <Text style={[styles.clearAllFiltersText, { color: theme.colors.text.secondary }]}>
+                Clear All
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
       {/* Products List */}
       <FlatList
-        data={products}
+        data={filteredProducts}
         renderItem={renderProductCard}
         keyExtractor={(item) => item.id}
         style={styles.productsList}
@@ -424,6 +781,9 @@ const ProductsPage = React.memo(function ProductsPage() {
         onClose={() => setShowProductForm(false)}
         onSubmit={handleProductSubmit}
       />
+
+      {/* Filter Modal */}
+      {renderFilterModal()}
 
     </SharedLayout>
   );
@@ -591,5 +951,143 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     marginTop: 8,
+  },
+  // Filter styles
+  filterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  filterModal: {
+    flex: 1,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  filterTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  closeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  filterContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  filterSection: {
+    marginVertical: 20,
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    gap: 12,
+  },
+  clearButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  applyButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Active filters styles
+  activeFiltersContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  activeFiltersScroll: {
+    flexDirection: 'row',
+  },
+  activeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  activeFilterText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  removeFilterButton: {
+    marginLeft: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeFilterText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  clearAllFiltersButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearAllFiltersText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
