@@ -127,59 +127,29 @@ export class FormService {
     }
   }
 
-  // Helper function to ensure user context is set
+  // Helper function to ensure user context is set for RLS
   private static async ensureUserContext(userId?: number): Promise<void> {
-    // Skip in demo mode
-    if (isDemoMode) {
-      console.log('Demo mode: Skipping user context setup');
+    if (!userId) {
+      console.log('⚠️ No userId provided to ensureUserContext');
       return;
     }
 
     try {
-      const contextUserId = userId || 11; // Use a valid active user ID
-      console.log('🔄 Setting user context via RPC for userId:', contextUserId);
-
-      // First try to set the user context
-      const { data, error } = await supabase.rpc('set_user_context', { user_id: contextUserId });
-
-      if (error) {
-        console.error('❌ Failed to set user context via RPC:', error);
-        // Fallback: Try to set context directly via SQL
-        console.log('🔄 Trying fallback method...');
-        const { error: fallbackError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', contextUserId)
-          .limit(1);
-
-        if (fallbackError) {
-          console.error('❌ Fallback also failed:', fallbackError);
-          // If all else fails, disable RLS temporarily for this session
-          console.log('🔄 Attempting to bypass RLS for this session...');
-        }
-      } else {
-        console.log('✅ User context set successfully:', data);
-      }
-
-      // Verify the context was set
-      try {
-        const { data: contextCheck, error: contextError } = await supabase.rpc('get_current_user_id');
-        console.log('🔍 Current user context check:', contextCheck);
-      } catch (verifyError) {
-        console.warn('⚠️ Could not verify user context:', verifyError);
-      }
-
+      console.log('🔄 Setting user context for userId:', userId);
+      const { setUserContext } = await import('@/lib/supabase');
+      await setUserContext(userId);
+      console.log('✅ User context set successfully for userId:', userId);
     } catch (error) {
       console.error('❌ Failed to set user context:', error);
-      // Don't throw the error, just log it and continue
-      console.log('⚠️ Continuing without user context - some features may be limited');
+      // Don't throw error, just log it - some operations might still work
     }
   }
 
   // Product Operations
   static async createProduct(data: ProductFormData, userId: number): Promise<{ success: boolean; data?: Product; error?: string }> {
     try {
-      await this.ensureUserContext(userId);
+      console.log('🔄 Starting product creation for user:', userId);
+      console.log('🔄 Product data:', data);
 
       // Prepare the product data with proper defaults
       const productData = {
@@ -206,6 +176,8 @@ export class FormService {
         updated_at: new Date().toISOString(),
       };
 
+      console.log('🔄 Inserting product data:', productData);
+
       const { data: product, error } = await supabase
         .from('products')
         .insert([productData])
@@ -213,8 +185,14 @@ export class FormService {
         .single();
 
       if (error) {
-        console.error('Error creating product:', error);
-        return { success: false, error: error.message };
+        console.error('❌ Error creating product:', error);
+        console.error('❌ Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        return { success: false, error: `Database error: ${error.message}` };
       }
 
       // If the product has initial stock, create the first lot
@@ -249,8 +227,10 @@ export class FormService {
 
       return { success: true, data: product };
     } catch (error) {
-      console.error('Error creating product:', error);
-      return { success: false, error: 'Failed to create product' };
+      console.error('❌ Error creating product:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create product';
+      console.error('❌ Error details:', errorMessage);
+      return { success: false, error: errorMessage };
     }
   }
 
@@ -833,7 +813,6 @@ export class FormService {
   static async createCustomer(data: CustomerFormData, userId: number): Promise<{ success: boolean; data?: Customer; error?: string }> {
     try {
       console.log('🔄 FormService.createCustomer called with:', { data, userId });
-      await this.ensureUserContext(userId);
 
       const insertData = {
         ...data,

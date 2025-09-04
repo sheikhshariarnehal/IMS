@@ -432,32 +432,36 @@ export default function SupplierAddForm({ visible, onClose, onSubmit, existingSu
       const result = await FormService.createSupplier(supplierData, user.id);
 
       if (result.success && result.data) {
-        Alert.alert(
-          'Success',
-          `Supplier "${result.data.company_name}" has been created successfully!`,
-          [{ text: 'OK', onPress: () => {
-            if (result.data) {
-              // Convert Supplier back to SupplierFormData for onSubmit
-              const supplierFormData: SupplierFormData = {
-                supplierName: result.data.company_name,
-                contactPerson: result.data.name,
-                phone: result.data.phone || '',
-                email: result.data.email || '',
-                alternatePhone: '', // Not available in Supplier interface
-                address: result.data.address || '',
-                city: '', // Not available in Supplier interface
-                state: '', // Not available in Supplier interface
-                zipCode: '', // Not available in Supplier interface
-                country: '', // Not available in Supplier interface
-                paymentTerms: result.data.payment_terms || '',
-                creditLimit: '0', // Not available in Supplier interface
-                notes: '' // Not available in Supplier interface
-              };
-              onSubmit(supplierFormData);
-            }
-            onClose();
-          } }]
-        );
+        // Convert Supplier back to SupplierFormData for onSubmit
+        const supplierFormData: SupplierFormData = {
+          supplierName: result.data.company_name,
+          contactPerson: result.data.name,
+          phone: result.data.phone || '',
+          email: result.data.email || '',
+          alternatePhone: '', // Not available in Supplier interface
+          address: result.data.address || '',
+          city: '', // Not available in Supplier interface
+          state: '', // Not available in Supplier interface
+          zipCode: '', // Not available in Supplier interface
+          country: '', // Not available in Supplier interface
+          paymentTerms: result.data.payment_terms || '',
+          creditLimit: '0', // Not available in Supplier interface
+          notes: '' // Not available in Supplier interface
+        };
+
+        // Call onSubmit to update parent component's state
+        onSubmit(supplierFormData);
+
+        // Close the form
+        onClose();
+
+        // Show success alert after state update
+        setTimeout(() => {
+          Alert.alert(
+            'Success',
+            `Supplier "${result.data.company_name}" has been created successfully!`
+          );
+        }, 100);
       } else {
         Alert.alert('Error', result.error || 'Failed to create supplier');
       }

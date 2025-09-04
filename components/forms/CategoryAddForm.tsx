@@ -65,7 +65,7 @@ export default function CategoryAddForm({ visible, onClose, onSubmit, existingCa
   const [isLoading, setIsLoading] = useState(false);
 
 
-  const canAddCategory = hasPermission('products', 'add');
+  const canAddCategory = hasPermission('categories', 'add');
 
   // Single form without steps
 
@@ -192,21 +192,24 @@ export default function CategoryAddForm({ visible, onClose, onSubmit, existingCa
       const result = await FormService.createCategory(categoryData, user.id);
 
       if (result.success && result.data) {
-        Alert.alert(
-          'Success',
-          `Category "${result.data.name}" has been created successfully!`,
-          [{
-            text: 'OK', onPress: () => {
-              onSubmit({
-                categoryName: result.data.name,
-                categoryCode: result.data.id.toString(),
-                description: result.data.description || '',
-                color_code: formData.color_code,
-              });
-              handleClose();
-            }
-          }]
-        );
+        // Call onSubmit to update the parent component's state
+        onSubmit({
+          categoryName: result.data.name,
+          categoryCode: result.data.id.toString(),
+          description: result.data.description || '',
+          color_code: formData.color_code,
+        });
+
+        // Close the form
+        handleClose();
+
+        // Show success alert after state update
+        setTimeout(() => {
+          Alert.alert(
+            'Success',
+            `Category "${result.data.name}" has been created successfully!`
+          );
+        }, 100);
       } else {
         Alert.alert('Error', result.error || 'Failed to create category');
       }

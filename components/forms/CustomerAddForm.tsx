@@ -554,10 +554,11 @@ export default function CustomerAddForm({ visible, onClose, onSubmit, existingCu
 
       case 'phone':
         if (value && typeof value === 'string' && value.trim()) {
-          const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+          // More flexible phone regex that allows numbers starting with 0
+          const phoneRegex = /^[\+]?[0-9][\d]{9,14}$/;
           const cleanPhone = value.replace(/[\s\-\(\)]/g, '');
-          if (cleanPhone.length < 10 || !phoneRegex.test(cleanPhone)) {
-            return 'Please enter a valid phone number (10+ digits)';
+          if (cleanPhone.length < 10 || cleanPhone.length > 15 || !phoneRegex.test(cleanPhone)) {
+            return 'Please enter a valid phone number (10-15 digits)';
           }
         }
         break;

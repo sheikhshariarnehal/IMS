@@ -41,15 +41,15 @@ const isMobile = width < 768;
 
 // Types
 interface Product {
-  id: number;
+  id: string | number;
   name: string;
   product_code: string;
   image?: string;
-  current_stock: number;
-  total_stock: number;
-  location_id: number;
+  current_stock: number | string;
+  total_stock: number | string;
+  location_id: number | string;
   location_name: string;
-  category_id: number;
+  category_id: number | string;
   category_name?: string;
 }
 
@@ -153,10 +153,15 @@ const TransferPage = React.memo(function TransferPage() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Transfer page: Fetching products...');
+      console.log('👤 Current user:', { id: user?.id, role: user?.role });
 
       // Set user context for RLS policies
       if (user?.id) {
+        console.log('🔧 Setting user context for user ID:', user.id);
         await supabase.rpc('set_user_context', { user_id: user.id });
+      } else {
+        console.warn('⚠️ No user ID available for setting context');
       }
 
       const { data, error } = await supabase
@@ -176,9 +181,12 @@ const TransferPage = React.memo(function TransferPage() {
         .order('name');
 
       if (error) {
-        console.error('Error fetching products:', error);
+        console.error('❌ Error fetching products:', error);
         return;
       }
+
+      console.log('📦 Raw products data:', data?.length, 'products found');
+      console.log('📦 First few products:', data?.slice(0, 3));
 
       const formattedProducts = data?.map(product => ({
         id: product.id,
@@ -192,9 +200,10 @@ const TransferPage = React.memo(function TransferPage() {
         category_name: product.categories?.name || 'Unknown Category',
       })) || [];
 
+      console.log('✅ Formatted products:', formattedProducts.length, 'products');
       setProducts(formattedProducts);
     } catch (error) {
-      console.error('Error fetching products:', error);
+      console.error('❌ Error fetching products:', error);
     } finally {
       setLoading(false);
     }
@@ -477,7 +486,13 @@ const TransferPage = React.memo(function TransferPage() {
 
   // Filter products based on search query and filters
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    console.log('🔍 Filtering products:', {
+      totalProducts: products.length,
+      searchQuery,
+      filters,
+    });
+
+    const filtered = products.filter(product => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.product_code.toLowerCase().includes(searchQuery.toLowerCase());
@@ -485,8 +500,24 @@ const TransferPage = React.memo(function TransferPage() {
       const matchesCategory = !filters.category || product.category_name === filters.category;
       const matchesLocation = !filters.location || product.location_name === filters.location;
 
-      return matchesSearch && matchesCategory && matchesLocation;
+      const passes = matchesSearch && matchesCategory && matchesLocation;
+
+      if (!passes) {
+        console.log('❌ Product filtered out:', {
+          name: product.name,
+          matchesSearch,
+          matchesCategory,
+          matchesLocation,
+          category_name: product.category_name,
+          location_name: product.location_name,
+        });
+      }
+
+      return passes;
     });
+
+    console.log('✅ Filtered products result:', filtered.length, 'products');
+    return filtered;
   }, [searchQuery, filters, products]);
 
   // Filter transfer requests
@@ -694,7 +725,7 @@ const TransferPage = React.memo(function TransferPage() {
           <FlatList
             data={filteredProducts}
             renderItem={renderProductItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id.toString()}
             contentContainerStyle={styles.listContainer}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -702,8 +733,20 @@ const TransferPage = React.memo(function TransferPage() {
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Package size={48} color={theme.colors.text.muted} />
-                <Text style={styles.emptyText}>No products found</Text>
-                <Text style={styles.emptySubtext}>Try adjusting your search or filters</Text>
+                <Text style={styles.emptyText}>
+                  {loading ? 'Loading products...' : 'No products found'}
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {loading
+                    ? 'Please wait while we fetch products from the database'
+                    : `Total products: ${products.length}, Filtered: ${filteredProducts.length}`
+                  }
+                </Text>
+                {!loading && products.length > 0 && filteredProducts.length === 0 && (
+                  <Text style={[styles.emptySubtext, { marginTop: 8, color: theme.colors.status.warning }]}>
+                    Try adjusting your search or filters
+                  </Text>
+                )}
               </View>
             }
           />

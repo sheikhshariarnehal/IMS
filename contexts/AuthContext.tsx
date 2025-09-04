@@ -46,6 +46,12 @@ interface UserPermissions {
     edit: boolean;
     delete: boolean;
   };
+  categories: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
   samples: {
     view: boolean;
     add: boolean;
@@ -277,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     console.log('🏭 Checking warehouse access:', { adminLocations, specificLocationId });
     console.log('🏭 isWarehouse function available:', typeof isWarehouse);
 
-    // Fallback: Known warehouse IDs based on database data
+    // Known warehouse IDs based on database data (locations with type 'warehouse')
     const knownWarehouses = [1, 3]; // Main Warehouse, Chittagong Warehouse
 
     if (specificLocationId) {
@@ -341,6 +347,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return showroomAccess;
   }, [isShowroom]);
 
+  // Generate default permissions for Admin role
+  const generateAdminPermissions = useCallback((): UserPermissions => {
+    return {
+      dashboard: true,
+      products: {
+        view: true,
+        add: true, // Can add products if they have warehouse access
+        edit: true,
+        delete: false, // Admins cannot delete anything
+      },
+      inventory: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false, // Admins cannot delete anything
+        transfer: true, // Can transfer if they have warehouse access
+      },
+      sales: {
+        view: true,
+        add: true, // Can sell if they have showroom access
+        edit: true,
+        delete: false, // Admins cannot delete anything
+        invoice: true,
+      },
+      customers: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false, // Admins cannot delete anything
+      },
+      suppliers: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false, // Admins cannot delete anything
+      },
+      categories: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false, // Admins cannot delete anything
+      },
+      samples: {
+        view: true,
+        add: true,
+        edit: true,
+        delete: false, // Admins cannot delete anything
+      },
+      reports: {
+        view: true,
+        export: true,
+      },
+      notifications: {
+        view: true,
+        manage: true,
+      },
+      activityLogs: {
+        view: true,
+      },
+    };
+  }, []);
+
   // Generate default permissions for Sales Manager role
   const generateSalesManagerPermissions = useCallback((): UserPermissions => {
     return {
@@ -372,6 +440,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         delete: false,
       },
       suppliers: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      categories: {
         view: false,
         add: false,
         edit: false,
@@ -428,6 +502,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         delete: false,
       },
       suppliers: {
+        view: false,
+        add: false,
+        edit: false,
+        delete: false,
+      },
+      categories: {
         view: false,
         add: false,
         edit: false,
@@ -541,9 +621,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('🔍 Raw user data from database:', user);
       console.log('🔍 User permissions field:', user.permissions);
 
-      // Set default permissions for Sales Manager and Investor if none exist
+      // Set default permissions for Admin, Sales Manager and Investor if none exist
       let userPermissions = user.permissions || {};
-      if (user.role === 'sales_manager' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
+      if (user.role === 'admin' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
+        console.log('🔧 Setting default permissions for Admin');
+        userPermissions = generateAdminPermissions();
+      } else if (user.role === 'sales_manager' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
         console.log('🔧 Setting default permissions for Sales Manager');
         userPermissions = generateSalesManagerPermissions();
       } else if (user.role === 'investor' && (!userPermissions || Object.keys(userPermissions).length === 0)) {
@@ -580,7 +663,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Login error:', error);
       return { success: false, error: 'Login failed. Please try again.' };
     }
-  }, [generateSalesManagerPermissions]);
+  }, [generateAdminPermissions, generateSalesManagerPermissions, generateInvestorPermissions]);
 
   // Function to refresh user data from database
   const refreshUserData = useCallback(async () => {
@@ -697,6 +780,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return action === 'view' || action === 'export';
 
       case 'suppliers':
+      case 'categories':
       case 'samples':
       case 'notifications':
       case 'activitylogs':

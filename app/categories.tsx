@@ -130,7 +130,7 @@ export default function CategoriesPage() {
   const { theme } = useTheme();
   const { user, hasPermission } = useAuth();
   const router = useRouter();
-  const [categories] = useState<Category[]>(mockCategories);
+  const [categories, setCategories] = useState<Category[]>(mockCategories);
   const [filters, setFilters] = useState<CategoryFilters>({});
   const [refreshing, setRefreshing] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -170,7 +170,7 @@ export default function CategoriesPage() {
   };
 
   const handleAddCategory = () => {
-    if (!hasPermission('products', 'add')) {
+    if (!hasPermission('categories', 'add')) {
       Alert.alert('Permission Denied', 'You do not have permission to add categories.');
       return;
     }
@@ -179,9 +179,31 @@ export default function CategoriesPage() {
 
   const handleCategorySubmit = (data: any) => {
     console.log('Category form submitted:', data);
-    // Here you would normally save the category data
-    Alert.alert('Success', 'Category added successfully!');
+
+    // Create new category object
+    const newCategory: Category = {
+      id: Date.now().toString(), // Temporary ID
+      name: data.categoryName,
+      code: data.categoryCode,
+      description: data.description || '',
+      color: data.color_code || '#3B82F6',
+      isActive: true,
+      sortOrder: categories.length + 1,
+      productCount: 0,
+      metaTitle: data.categoryName,
+      metaDescription: data.description || '',
+      createdBy: user?.name || 'Unknown',
+      lastUpdated: new Date(),
+    };
+
+    // Add to categories list
+    setCategories(prev => [newCategory, ...prev]);
+
+    // Close form
     setShowCategoryForm(false);
+
+    // Show success message (this will be shown by CategoryAddForm, so we don't need another one here)
+    console.log('Category added to list:', newCategory);
   };
 
   const handleAction = (action: string, category: Category) => {
@@ -313,7 +335,7 @@ export default function CategoriesPage() {
           <Eye size={16} color={theme.colors.status.info} />
         </TouchableOpacity>
         
-        {hasPermission('products', 'edit') && (
+        {hasPermission('categories', 'edit') && (
           <>
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '20' }]}
@@ -321,14 +343,14 @@ export default function CategoriesPage() {
             >
               <Edit size={16} color={theme.colors.status.warning} />
             </TouchableOpacity>
-            
+
             <TouchableOpacity
-              style={[styles.actionButton, { 
-                backgroundColor: item.isActive ? theme.colors.status.error + '20' : theme.colors.status.success + '20' 
+              style={[styles.actionButton, {
+                backgroundColor: item.isActive ? theme.colors.status.error + '20' : theme.colors.status.success + '20'
               }]}
               onPress={() => handleAction('toggle', item)}
             >
-              {item.isActive ? 
+              {item.isActive ?
                 <XCircle size={16} color={theme.colors.status.error} /> :
                 <CheckCircle size={16} color={theme.colors.status.success} />
               }
@@ -361,8 +383,8 @@ export default function CategoriesPage() {
             >
               <Download size={20} color={theme.colors.primary} />
             </TouchableOpacity>
-            {hasPermission('products', 'add') && (
-              <TouchableOpacity 
+            {hasPermission('categories', 'add') && (
+              <TouchableOpacity
                 style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
                 onPress={handleAddCategory}
               >

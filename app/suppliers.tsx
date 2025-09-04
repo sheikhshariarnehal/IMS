@@ -233,9 +233,15 @@ export default function SuppliersPage() {
 
   const handleSupplierSubmit = (data: any) => {
     console.log('Supplier form submitted:', data);
-    // Here you would normally save the supplier data
-    Alert.alert('Success', 'Supplier added successfully!');
+
+    // Reload suppliers to get the latest data including the new supplier
+    handleSupplierAdded();
+
+    // Close form
     setShowSupplierForm(false);
+
+    // Log success (SupplierAddForm will show the success alert)
+    console.log('Supplier added, reloading list');
   };
 
   const renderKPICards = () => (
