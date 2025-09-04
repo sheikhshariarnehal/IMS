@@ -47,6 +47,14 @@ import {
     RefreshCw,
     CheckCircle,
     AlertTriangle,
+    UserCheck,
+    UserX,
+    MoreVertical,
+    Power,
+    PowerOff,
+    Search,
+    Filter,
+    ChevronDown,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -164,6 +172,11 @@ export default function SettingsPage() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<'role-management' | 'account' | 'appearance' | 'system' | 'permissions'>('account');
     const [users, setUsers] = useState<UserProfile[]>([]);
+    const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+    const [roleFilter, setRoleFilter] = useState<'all' | 'super_admin' | 'admin' | 'sales_manager' | 'investor'>('all');
+    const [showFilters, setShowFilters] = useState(false);
     const [locations, setLocations] = useState<LocationMap>({});
     const [showAddUserModal, setShowAddUserModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
@@ -205,6 +218,36 @@ export default function SettingsPage() {
             loadLocations();
         }
     }, [activeTab, user?.role]);
+
+    // Filter users based on search query and filters
+    React.useEffect(() => {
+        let filtered = users;
+
+        // Apply search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter(user =>
+                user.fullName.toLowerCase().includes(query) ||
+                user.email.toLowerCase().includes(query) ||
+                user.phone?.toLowerCase().includes(query) ||
+                user.id.toLowerCase().includes(query)
+            );
+        }
+
+        // Apply status filter
+        if (statusFilter !== 'all') {
+            filtered = filtered.filter(user =>
+                statusFilter === 'active' ? user.isActive : !user.isActive
+            );
+        }
+
+        // Apply role filter
+        if (roleFilter !== 'all') {
+            filtered = filtered.filter(user => user.role === roleFilter);
+        }
+
+        setFilteredUsers(filtered);
+    }, [users, searchQuery, statusFilter, roleFilter]);
 
     const loadUsers = async () => {
         if (user?.role !== 'super_admin') return;
@@ -361,36 +404,55 @@ export default function SettingsPage() {
     };
 
     const handleToggleUserStatus = async (userProfile: UserProfile) => {
-        try {
-            const newStatus = userProfile.isActive ? 'inactive' : 'active';
-            console.log(`🔄 Toggling user status to ${newStatus}:`, userProfile.id);
+        const newStatus = userProfile.isActive ? 'inactive' : 'active';
+        const actionText = userProfile.isActive ? 'deactivate' : 'activate';
 
-            // Import supabase here to avoid circular dependencies
-            const { supabase } = await import('@/lib/supabase');
+        Alert.alert(
+            `${actionText.charAt(0).toUpperCase() + actionText.slice(1)} User`,
+            `Are you sure you want to ${actionText} ${userProfile.fullName}?\n\n${
+                userProfile.isActive
+                    ? 'This user will lose access to the system.'
+                    : 'This user will regain access to the system.'
+            }`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: actionText.charAt(0).toUpperCase() + actionText.slice(1),
+                    style: userProfile.isActive ? 'destructive' : 'default',
+                    onPress: async () => {
+                        try {
+                            console.log(`🔄 Toggling user status to ${newStatus}:`, userProfile.id);
 
-            const { error } = await supabase
-                .from('users')
-                .update({ status: newStatus })
-                .eq('id', parseInt(userProfile.id));
+                            // Import supabase here to avoid circular dependencies
+                            const { supabase } = await import('@/lib/supabase');
 
-            if (error) {
-                console.error('❌ Failed to toggle user status:', error);
-                Alert.alert('Error', error.message || 'Failed to update user status');
-                return;
-            }
+                            const { error } = await supabase
+                                .from('users')
+                                .update({ status: newStatus })
+                                .eq('id', parseInt(userProfile.id));
 
-            // Update local state
-            const updatedUser = { ...userProfile, isActive: !userProfile.isActive };
-            setUsers(prev => prev.map(u => u.id === userProfile.id ? updatedUser : u));
-            Alert.alert(
-                'Success',
-                `User ${updatedUser.isActive ? 'activated' : 'deactivated'} successfully`
-            );
-            console.log('✅ User status updated successfully');
-        } catch (error: any) {
-            console.error('Failed to toggle user status:', error);
-            Alert.alert('Error', error.message || 'Failed to update user status');
-        }
+                            if (error) {
+                                console.error('❌ Failed to toggle user status:', error);
+                                Alert.alert('Error', error.message || 'Failed to update user status');
+                                return;
+                            }
+
+                            // Update local state
+                            const updatedUser = { ...userProfile, isActive: !userProfile.isActive };
+                            setUsers(prev => prev.map(u => u.id === userProfile.id ? updatedUser : u));
+                            Alert.alert(
+                                'Success',
+                                `User ${updatedUser.isActive ? 'activated' : 'deactivated'} successfully`
+                            );
+                            console.log('✅ User status updated successfully');
+                        } catch (error: any) {
+                            console.error('Failed to toggle user status:', error);
+                            Alert.alert('Error', error.message || 'Failed to update user status');
+                        }
+                    }
+                },
+            ]
+        );
     };
 
     const getLocationNames = (locationIds: string[]): string => {
@@ -503,7 +565,7 @@ export default function SettingsPage() {
                             User Management
                         </Text>
                         <Text style={[styles.sectionSubtitle, { color: theme.colors.text.secondary }]}>
-                            Manage system users and their permissions ({users.length} users)
+                            Manage system users and their permissions ({filteredUsers.length} of {users.length} users)
                         </Text>
                     </View>
                     <View style={styles.headerActions}>
@@ -524,6 +586,154 @@ export default function SettingsPage() {
                     </View>
                 </View>
 
+                {/* Search and Filter Controls */}
+                <View style={styles.controlsContainer}>
+                    {/* Search Bar */}
+                    <View style={[styles.searchContainer, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
+                        <Search size={18} color={theme.colors.text.muted} />
+                        <TextInput
+                            style={[styles.searchInput, { color: theme.colors.text.primary }]}
+                            placeholder="Search users..."
+                            placeholderTextColor={theme.colors.text.muted}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                <X size={18} color={theme.colors.text.muted} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Filter Button */}
+                    <TouchableOpacity
+                        style={[
+                            styles.filterToggleButton,
+                            {
+                                backgroundColor: (statusFilter !== 'all' || roleFilter !== 'all')
+                                    ? theme.colors.primary
+                                    : theme.colors.backgroundSecondary,
+                                borderColor: theme.colors.border
+                            }
+                        ]}
+                        onPress={() => setShowFilters(!showFilters)}
+                    >
+                        <Filter
+                            size={18}
+                            color={(statusFilter !== 'all' || roleFilter !== 'all')
+                                ? theme.colors.text.inverse
+                                : theme.colors.text.secondary
+                            }
+                        />
+                        <Text style={[
+                            styles.filterToggleText,
+                            {
+                                color: (statusFilter !== 'all' || roleFilter !== 'all')
+                                    ? theme.colors.text.inverse
+                                    : theme.colors.text.secondary
+                            }
+                        ]}>
+                            Filter
+                        </Text>
+                        <ChevronDown
+                            size={16}
+                            color={(statusFilter !== 'all' || roleFilter !== 'all')
+                                ? theme.colors.text.inverse
+                                : theme.colors.text.secondary
+                            }
+                            style={{ transform: [{ rotate: showFilters ? '180deg' : '0deg' }] }}
+                        />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Filter Options */}
+                {showFilters && (
+                    <View style={[styles.filtersPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                        <View style={styles.filterSection}>
+                            <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>Status</Text>
+                            <View style={styles.filterChips}>
+                                {(['all', 'active', 'inactive'] as const).map((status) => (
+                                    <TouchableOpacity
+                                        key={status}
+                                        style={[
+                                            styles.filterChip,
+                                            {
+                                                backgroundColor: statusFilter === status
+                                                    ? theme.colors.primary
+                                                    : 'transparent',
+                                                borderColor: statusFilter === status
+                                                    ? theme.colors.primary
+                                                    : theme.colors.border
+                                            }
+                                        ]}
+                                        onPress={() => setStatusFilter(status)}
+                                    >
+                                        <Text style={[
+                                            styles.filterChipText,
+                                            {
+                                                color: statusFilter === status
+                                                    ? theme.colors.text.inverse
+                                                    : theme.colors.text.secondary
+                                            }
+                                        ]}>
+                                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+
+                        <View style={styles.filterSection}>
+                            <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>Role</Text>
+                            <View style={styles.filterChips}>
+                                {(['all', 'super_admin', 'admin', 'sales_manager', 'investor'] as const).map((role) => (
+                                    <TouchableOpacity
+                                        key={role}
+                                        style={[
+                                            styles.filterChip,
+                                            {
+                                                backgroundColor: roleFilter === role
+                                                    ? theme.colors.primary
+                                                    : 'transparent',
+                                                borderColor: roleFilter === role
+                                                    ? theme.colors.primary
+                                                    : theme.colors.border
+                                            }
+                                        ]}
+                                        onPress={() => setRoleFilter(role)}
+                                    >
+                                        <Text style={[
+                                            styles.filterChipText,
+                                            {
+                                                color: roleFilter === role
+                                                    ? theme.colors.text.inverse
+                                                    : theme.colors.text.secondary
+                                            }
+                                        ]}>
+                                            {role === 'all' ? 'All Roles' : ROLE_LABELS[role as keyof typeof ROLE_LABELS]}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+
+                        {(statusFilter !== 'all' || roleFilter !== 'all') && (
+                            <TouchableOpacity
+                                style={[styles.clearAllButton, { borderColor: theme.colors.border }]}
+                                onPress={() => {
+                                    setStatusFilter('all');
+                                    setRoleFilter('all');
+                                }}
+                            >
+                                <X size={16} color={theme.colors.text.muted} />
+                                <Text style={[styles.clearAllText, { color: theme.colors.text.muted }]}>
+                                    Clear All Filters
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
+
                 {loading ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -533,90 +743,125 @@ export default function SettingsPage() {
                     </View>
                 ) : (
                     <View style={styles.usersContainer}>
-                        {users.length === 0 ? (
+                        {filteredUsers.length === 0 ? (
                             <View style={styles.emptyContainer}>
                                 <Users size={48} color={theme.colors.text.muted} />
                                 <Text style={[styles.emptyTitle, { color: theme.colors.text.primary }]}>
-                                    No Users Found
+                                    {users.length === 0 ? 'No Users Found' : 'No Users Match Filters'}
                                 </Text>
                                 <Text style={[styles.emptyText, { color: theme.colors.text.secondary }]}>
-                                    Add your first user to get started
+                                    {users.length === 0 ? 'Add your first user to get started' : 'Try adjusting your search or filter criteria'}
                                 </Text>
                             </View>
                         ) : (
-                            users.map((userProfile) => (
+                            filteredUsers.map((userProfile) => (
                                 <View key={userProfile.id} style={[styles.userCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-                                    <View style={styles.userHeader}>
-                                        <View style={styles.userInfo}>
-                                            <View style={styles.avatarContainer}>
-                                                <View style={[styles.avatarFallback, { backgroundColor: theme.colors.primary }]}>
-                                                    <Text style={[styles.avatarText, { color: theme.colors.text.inverse }]}>
-                                                        {getUserInitials(userProfile.fullName)}
-                                                    </Text>
-                                                </View>
+                                    {/* User Main Info */}
+                                    <View style={styles.userMainInfo}>
+                                        <View style={styles.userAvatar}>
+                                            <View style={[styles.avatarCircle, { backgroundColor: theme.colors.primary }]}>
+                                                <Text style={[styles.avatarText, { color: theme.colors.text.inverse }]}>
+                                                    {getUserInitials(userProfile.fullName)}
+                                                </Text>
                                             </View>
-                                            <View style={styles.userDetails}>
+                                        </View>
+
+                                        <View style={styles.userInfo}>
+                                            <View style={styles.userNameRow}>
                                                 <Text style={[styles.userName, { color: theme.colors.text.primary }]}>
                                                     {userProfile.fullName}
                                                 </Text>
-                                                <Text style={[styles.userEmail, { color: theme.colors.text.secondary }]}>
-                                                    {userProfile.email}
-                                                </Text>
-                                                {userProfile.phone && (
-                                                    <Text style={[styles.userPhone, { color: theme.colors.text.muted }]}>
-                                                        {userProfile.phone}
+                                                <View style={[
+                                                    styles.statusIndicator,
+                                                    { backgroundColor: userProfile.isActive ? theme.colors.status.success : theme.colors.status.error }
+                                                ]} />
+                                            </View>
+
+                                            <Text style={[styles.userEmail, { color: theme.colors.text.secondary }]}>
+                                                {userProfile.email}
+                                            </Text>
+
+                                            <View style={styles.userMetaInfo}>
+                                                <View style={[styles.roleBadge, { backgroundColor: theme.colors.primary + '15' }]}>
+                                                    <Text style={[styles.roleBadgeText, { color: theme.colors.primary }]}>
+                                                        {ROLE_LABELS[userProfile.role]}
                                                     </Text>
+                                                </View>
+
+                                                {userProfile.phone && (
+                                                    <View style={styles.phoneInfo}>
+                                                        <Phone size={12} color={theme.colors.text.muted} />
+                                                        <Text style={[styles.phoneText, { color: theme.colors.text.muted }]}>
+                                                            {userProfile.phone}
+                                                        </Text>
+                                                    </View>
                                                 )}
-                                                <Text style={[styles.userLocations, { color: theme.colors.text.muted }]}>
-                                                    📍 {userProfile.role === 'super_admin' ? 'All Locations' :
-                                                        userProfile.role === 'investor' ? 'No Location Access' :
-                                                        locations[userProfile.id] ? locations[userProfile.id].name : 'No locations assigned'}
-                                                </Text>
                                             </View>
-                                        </View>
-                                        <View style={styles.userBadges}>
-                                            <View style={[styles.roleBadge, { backgroundColor: theme.colors.primary + '20' }]}>
-                                                <Text style={[styles.roleBadgeText, { color: theme.colors.primary }]}>
-                                                    {ROLE_LABELS[userProfile.role]}
-                                                </Text>
-                                            </View>
-                                            <TouchableOpacity
-                                                style={[
-                                                    styles.statusBadge,
-                                                    { backgroundColor: userProfile.isActive ? theme.colors.status.success + '20' : theme.colors.status.error + '20' }
-                                                ]}
-                                                onPress={() => handleToggleUserStatus(userProfile)}
-                                            >
-                                                <Text style={[
-                                                    styles.statusBadgeText,
-                                                    { color: userProfile.isActive ? theme.colors.status.success : theme.colors.status.error }
-                                                ]}>
-                                                    {userProfile.isActive ? 'Active' : 'Inactive'}
-                                                </Text>
-                                            </TouchableOpacity>
                                         </View>
                                     </View>
 
-                                    <View style={styles.userMeta}>
-                                        <Text style={[styles.userMetaText, { color: theme.colors.text.muted }]}>
-                                            Created: {new Date(userProfile.createdAt).toLocaleDateString()}
+                                    {/* Location Info */}
+                                    <View style={styles.locationInfo}>
+                                        <MapPin size={12} color={theme.colors.text.muted} />
+                                        <Text style={[styles.locationText, { color: theme.colors.text.muted }]}>
+                                            {userProfile.role === 'super_admin' ? 'All Locations' :
+                                             userProfile.role === 'investor' ? 'No Location Access' :
+                                             locations[userProfile.id] ? locations[userProfile.id].name : 'No locations assigned'}
                                         </Text>
-
                                     </View>
 
+                                    {/* Actions */}
                                     <View style={styles.userActions}>
                                         <TouchableOpacity
-                                            style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '20' }]}
+                                            style={[styles.actionBtn, styles.editBtn, { backgroundColor: theme.colors.backgroundSecondary }]}
                                             onPress={() => handleEditUser(userProfile)}
+                                            activeOpacity={0.7}
                                         >
-                                            <Edit size={16} color={theme.colors.status.warning} />
+                                            <Edit size={16} color={theme.colors.text.secondary} />
+                                            <Text style={[styles.actionBtnText, { color: theme.colors.text.secondary }]}>Edit</Text>
                                         </TouchableOpacity>
+
                                         <TouchableOpacity
-                                            style={[styles.actionButton, { backgroundColor: theme.colors.status.error + '20' }]}
+                                            style={[
+                                                styles.actionBtn,
+                                                styles.statusBtn,
+                                                {
+                                                    backgroundColor: userProfile.isActive
+                                                        ? theme.colors.status.error + '15'
+                                                        : theme.colors.status.success + '15'
+                                                }
+                                            ]}
+                                            onPress={() => handleToggleUserStatus(userProfile)}
+                                            activeOpacity={0.7}
+                                        >
+                                            {userProfile.isActive ? (
+                                                <>
+                                                    <UserX size={16} color={theme.colors.status.error} />
+                                                    <Text style={[styles.actionBtnText, { color: theme.colors.status.error }]}>Deactivate</Text>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <UserCheck size={16} color={theme.colors.status.success} />
+                                                    <Text style={[styles.actionBtnText, { color: theme.colors.status.success }]}>Activate</Text>
+                                                </>
+                                            )}
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={[styles.actionBtn, styles.deleteBtn, { backgroundColor: theme.colors.status.error + '15' }]}
                                             onPress={() => handleDeleteUser(userProfile)}
+                                            activeOpacity={0.7}
                                         >
                                             <Trash2 size={16} color={theme.colors.status.error} />
+                                            <Text style={[styles.actionBtnText, { color: theme.colors.status.error }]}>Delete</Text>
                                         </TouchableOpacity>
+                                    </View>
+
+                                    {/* Footer Info */}
+                                    <View style={[styles.userFooter, { borderTopColor: theme.colors.border }]}>
+                                        <Text style={[styles.footerText, { color: theme.colors.text.muted }]}>
+                                            ID: {userProfile.id} • Created: {new Date(userProfile.createdAt).toLocaleDateString()}
+                                        </Text>
                                     </View>
                                 </View>
                             ))
@@ -1221,6 +1466,11 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
         borderRadius: 12,
     },
+    statusBadgeContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     statusBadgeText: {
         fontSize: 10,
         fontWeight: '600',
@@ -1469,61 +1719,202 @@ const styles = StyleSheet.create({
     usersContainer: {
         gap: 12,
     },
+    // User Card Styles
     userCard: {
         borderRadius: 12,
         borderWidth: 1,
-        padding: 16,
-    },
-    userHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
         marginBottom: 12,
+        overflow: 'hidden',
+    },
+    userMainInfo: {
+        flexDirection: 'row',
+        padding: 16,
+        alignItems: 'flex-start',
+        gap: 12,
+    },
+    userAvatar: {
+        width: 48,
+        height: 48,
+    },
+    avatarCircle: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarText: {
+        fontSize: 16,
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
     userInfo: {
-        flexDirection: 'row',
         flex: 1,
-        marginRight: 12,
+        gap: 4,
     },
-    userDetails: {
-        flex: 1,
-        marginLeft: 12,
+    userNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     userName: {
         fontSize: 16,
         fontWeight: '600',
-        marginBottom: 4,
+        flex: 1,
+    },
+    statusIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
     userEmail: {
         fontSize: 14,
-        marginBottom: 2,
+        fontWeight: '400',
     },
-    userPhone: {
-        fontSize: 12,
-        marginBottom: 2,
-    },
-    userLocations: {
-        fontSize: 12,
-        fontStyle: 'italic',
-    },
-    userBadges: {
-        alignItems: 'flex-end',
-        gap: 6,
-    },
-    userMeta: {
+    userMetaInfo: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 12,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(0,0,0,0.1)',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 4,
     },
-    userMetaText: {
-        fontSize: 11,
+    phoneInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    phoneText: {
+        fontSize: 12,
+        fontWeight: '400',
+    },
+    locationInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 16,
+        paddingBottom: 12,
+    },
+    locationText: {
+        fontSize: 12,
+        fontWeight: '400',
     },
     userActions: {
         flexDirection: 'row',
-        justifyContent: 'flex-end',
+        paddingHorizontal: 16,
+        paddingBottom: 16,
         gap: 8,
+    },
+    actionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        gap: 6,
+    },
+    actionBtnText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    editBtn: {
+        // Additional styles for edit button if needed
+    },
+    statusBtn: {
+        // Additional styles for status button if needed
+    },
+    deleteBtn: {
+        // Additional styles for delete button if needed
+    },
+    userFooter: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderTopWidth: 1,
+    },
+    footerText: {
+        fontSize: 11,
+        fontWeight: '400',
+        textAlign: 'center',
+    },
+    // Search and Filter Controls
+    controlsContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 16,
+        alignItems: 'center',
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        gap: 10,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        paddingVertical: 0,
+        fontWeight: '400',
+    },
+    filterToggleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        gap: 8,
+    },
+    filterToggleText: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    filtersPanel: {
+        marginBottom: 16,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        gap: 16,
+    },
+    filterSection: {
+        gap: 8,
+    },
+    filterSectionTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 4,
+    },
+    filterChips: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    filterChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    filterChipText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    clearAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 6,
+        marginTop: 8,
+    },
+    clearAllText: {
+        fontSize: 12,
+        fontWeight: '500',
     },
 });
