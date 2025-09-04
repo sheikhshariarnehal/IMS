@@ -742,6 +742,8 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
     setSelectedExistingProduct(product);
     const nextLotNumber = ((product.last_lot_no || product.current_lot_number || 0) + 1).toString();
 
+
+
     setFormData(prev => ({
       ...prev,
       name: product.name,
@@ -751,10 +753,10 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
       supplier_id: product.supplier_id?.toString() || '',
       location_id: product.location_id?.toString() || '',
       lot_number: nextLotNumber,
-      // Keep existing pricing as defaults for new stock entry
-      purchase_price: product.purchase_price?.toString() || '',
-      selling_price: product.selling_price?.toString() || '',
-      per_meter_price: product.per_meter_price?.toString() || '',
+      // Clear pricing fields for new lot entry - user should enter new pricing
+      purchase_price: '',
+      selling_price: '',
+      per_meter_price: '',
       unit_of_measurement: product.unit_of_measurement || 'meter',
       per_unit_price: '',
       // Reset stock to 0 for new lot entry
@@ -764,6 +766,8 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
       product_status: product.product_status || 'active',
       wastage_status: product.wastage_status || false,
     }));
+
+
   };
 
   // Reset form when product type changes
@@ -1193,8 +1197,9 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
               const isRowField = (field === 'purchase_price' || field === 'lot_number' || field === 'unit_of_measurement');
 
               // For existing products, make certain fields read-only
+              // Note: category_id is auto-filled but should remain visible and selectable
               const isReadOnlyForExisting = productType === 'existing' &&
-                ['name', 'product_code', 'category_id', 'description', 'unit_of_measurement'].includes(field);
+                ['name', 'product_code', 'description', 'unit_of_measurement'].includes(field);
 
               if (isRowField && field === 'purchase_price') {
                 return (

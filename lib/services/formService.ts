@@ -629,9 +629,18 @@ export class FormService {
           id,
           name,
           product_code,
+          category_id,
+          supplier_id,
+          location_id,
           current_stock,
           selling_price,
           unit_of_measurement,
+          description,
+          purchase_price,
+          per_meter_price,
+          minimum_threshold,
+          product_status,
+          wastage_status,
           categories(name),
           suppliers(name)
         `)
@@ -713,22 +722,13 @@ export class FormService {
       }
 
       // Update the product's current stock and other relevant fields
+      // NOTE: We do NOT update pricing fields (purchase_price, selling_price, per_meter_price)
+      // because those are specific to each lot and should only be stored in products_lot table
       const updateData = {
         current_stock: (existingProduct.current_stock || 0) + (stockData.current_stock || 0),
         total_purchased: (existingProduct.total_purchased || 0) + (stockData.current_stock || 0),
         updated_at: new Date().toISOString(),
       };
-
-      // Only update fields that are provided in stockData
-      if (stockData.purchase_price !== undefined) {
-        updateData.purchase_price = stockData.purchase_price;
-      }
-      if (stockData.selling_price !== undefined) {
-        updateData.selling_price = stockData.selling_price;
-      }
-      if (stockData.per_meter_price !== undefined) {
-        updateData.per_meter_price = stockData.per_meter_price;
-      }
 
       const { data: updatedProduct, error: updateError } = await supabase
         .from('products')
