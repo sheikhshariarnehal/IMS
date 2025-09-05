@@ -10,6 +10,7 @@ import {
   FlatList,
   Alert,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import {
   Plus,
@@ -36,6 +37,8 @@ import {
   Package,
   CheckCircle,
   XCircle,
+  X,
+  ChevronDown,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -202,6 +205,7 @@ export default function CustomersPage() {
   const [filters, setFilters] = useState<CustomerFilters>({});
   const [refreshing, setRefreshing] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Load customers from database
@@ -223,6 +227,7 @@ export default function CustomersPage() {
         total_sales: customer.total_purchases || 0,
         total_orders: 0, // Will be calculated from sales
         is_active: true,
+        is_red_listed: customer.red_list_status || false, // Map red_list_status to is_red_listed
         total_spent: customer.total_purchases || 0,
         average_order_value: 0, // Will be calculated
         purchase_frequency: 0, // Will be calculated
@@ -761,12 +766,24 @@ export default function CustomersPage() {
       case 'red-list':
         return redListCustomers.map((customer: any) => ({
           ...customer,
-          id: customer.customer_id.toString(),
-          name: customer.customer_name,
+          id: customer.id ? customer.id.toString() : (customer.customer_id ? customer.customer_id.toString() : customer.id),
+          name: customer.name || customer.customer_name,
+          email: customer.email,
+          phone: customer.phone,
+          customer_type: customer.customer_type || 'regular',
           payment_status: 'red_listed' as const,
           is_red_listed: true,
           outstanding_amount: customer.total_due || 0,
           days_past_due: customer.overdue_count || 0,
+          credit_limit: 50000,
+          current_balance: customer.total_due || 0,
+          total_sales: customer.total_purchases || 0,
+          total_orders: customer.total_sales_count || 0,
+          is_active: true,
+          total_spent: customer.total_purchases || 0,
+          average_order_value: 0,
+          purchase_frequency: 0,
+          payment_terms: 30,
         }));
       case 'top-customers':
         return analytics.topCustomersByRevenue;
@@ -781,6 +798,299 @@ export default function CustomersPage() {
     } else {
       return renderCustomerItem({ item: item as Customer });
     }
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({});
+  };
+
+  // Apply filters and close modal
+  const applyFilters = () => {
+    setShowFilters(false);
+  };
+
+  // Get active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.customer_type) count++;
+    if (filters.payment_status) count++;
+    if (filters.is_red_listed !== undefined) count++;
+    if (filters.is_active !== undefined) count++;
+    return count;
+  }, [filters]);
+
+  // Render filter modal
+  const renderFilterModal = () => {
+    const customerTypeOptions = ['vip', 'regular', 'wholesale'];
+    const paymentStatusOptions = ['good', 'warning', 'overdue', 'red_listed'];
+
+    return (
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <SafeAreaView style={[styles.filterModal, { backgroundColor: theme.colors.background }]}>
+          <View style={[styles.filterHeader, { borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.filterTitle, { color: theme.colors.text.primary }]}>
+              Filter Customers
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowFilters(false)}
+              style={styles.closeButton}
+            >
+              <X size={24} color={theme.colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.filterContent}>
+            {/* Customer Type Filter */}
+            <View style={styles.filterGroup}>
+              <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>
+                Customer Type
+              </Text>
+              <View style={styles.filterChips}>
+                {customerTypeOptions.map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.customer_type === type
+                          ? theme.colors.primary
+                          : theme.colors.backgroundSecondary,
+                        borderColor: filters.customer_type === type
+                          ? theme.colors.primary
+                          : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => {
+                      setFilters(prev => ({
+                        ...prev,
+                        customer_type: prev.customer_type === type ? undefined : type as any
+                      }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      {
+                        color: filters.customer_type === type
+                          ? theme.colors.text.inverse
+                          : theme.colors.text.primary
+                      }
+                    ]}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Payment Status Filter */}
+            <View style={styles.filterGroup}>
+              <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>
+                Payment Status
+              </Text>
+              <View style={styles.filterChips}>
+                {paymentStatusOptions.map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.payment_status === status
+                          ? theme.colors.primary
+                          : theme.colors.backgroundSecondary,
+                        borderColor: filters.payment_status === status
+                          ? theme.colors.primary
+                          : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => {
+                      setFilters(prev => ({
+                        ...prev,
+                        payment_status: prev.payment_status === status ? undefined : status as any
+                      }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      {
+                        color: filters.payment_status === status
+                          ? theme.colors.text.inverse
+                          : theme.colors.text.primary
+                      }
+                    ]}>
+                      {status === 'red_listed' ? 'Red Listed' : status.charAt(0).toUpperCase() + status.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Red List Status Filter */}
+            <View style={styles.filterGroup}>
+              <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>
+                Red List Status
+              </Text>
+              <View style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: filters.is_red_listed === true
+                        ? theme.colors.status.error
+                        : theme.colors.backgroundSecondary,
+                      borderColor: filters.is_red_listed === true
+                        ? theme.colors.status.error
+                        : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      is_red_listed: prev.is_red_listed === true ? undefined : true
+                    }));
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    {
+                      color: filters.is_red_listed === true
+                        ? theme.colors.text.inverse
+                        : theme.colors.text.primary
+                    }
+                  ]}>
+                    Red Listed Only
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: filters.is_red_listed === false
+                        ? theme.colors.status.success
+                        : theme.colors.backgroundSecondary,
+                      borderColor: filters.is_red_listed === false
+                        ? theme.colors.status.success
+                        : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      is_red_listed: prev.is_red_listed === false ? undefined : false
+                    }));
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    {
+                      color: filters.is_red_listed === false
+                        ? theme.colors.text.inverse
+                        : theme.colors.text.primary
+                    }
+                  ]}>
+                    Not Red Listed
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Active Status Filter */}
+            <View style={styles.filterGroup}>
+              <Text style={[styles.filterGroupTitle, { color: theme.colors.text.primary }]}>
+                Status
+              </Text>
+              <View style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: filters.is_active === true
+                        ? theme.colors.status.success
+                        : theme.colors.backgroundSecondary,
+                      borderColor: filters.is_active === true
+                        ? theme.colors.status.success
+                        : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      is_active: prev.is_active === true ? undefined : true
+                    }));
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    {
+                      color: filters.is_active === true
+                        ? theme.colors.text.inverse
+                        : theme.colors.text.primary
+                    }
+                  ]}>
+                    Active Only
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: filters.is_active === false
+                        ? theme.colors.status.warning
+                        : theme.colors.backgroundSecondary,
+                      borderColor: filters.is_active === false
+                        ? theme.colors.status.warning
+                        : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      is_active: prev.is_active === false ? undefined : false
+                    }));
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    {
+                      color: filters.is_active === false
+                        ? theme.colors.text.inverse
+                        : theme.colors.text.primary
+                    }
+                  ]}>
+                    Inactive Only
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Filter Actions */}
+          <View style={[styles.filterActions, { borderTopColor: theme.colors.border }]}>
+            <TouchableOpacity
+              style={[styles.clearButton, { borderColor: theme.colors.border }]}
+              onPress={clearFilters}
+            >
+              <Text style={[styles.clearButtonText, { color: theme.colors.text.secondary }]}>
+                Clear All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.applyButton, { backgroundColor: theme.colors.primary }]}
+              onPress={applyFilters}
+            >
+              <Text style={[styles.applyButtonText, { color: theme.colors.background }]}>
+                Apply Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
   };
 
   return (
@@ -828,11 +1138,89 @@ export default function CustomersPage() {
             />
           </View>
           <TouchableOpacity
-            style={[styles.filterButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+            style={[
+              styles.filterButton,
+              {
+                backgroundColor: activeFilterCount > 0
+                  ? theme.colors.primary
+                  : theme.colors.backgroundSecondary
+              }
+            ]}
+            onPress={() => setShowFilters(true)}
           >
-            <Filter size={20} color={theme.colors.primary} />
+            <Filter
+              size={20}
+              color={activeFilterCount > 0 ? theme.colors.text.inverse : theme.colors.primary}
+            />
+            {activeFilterCount > 0 && (
+              <View style={[styles.filterBadge, { backgroundColor: theme.colors.status.error }]}>
+                <Text style={[styles.filterBadgeText, { color: theme.colors.text.inverse }]}>
+                  {activeFilterCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
+
+        {/* Active Filters */}
+        {(filters.customer_type || filters.payment_status || filters.is_red_listed !== undefined || filters.is_active !== undefined) && (
+          <View style={[styles.activeFiltersContainer, { backgroundColor: theme.colors.card }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activeFiltersScroll}>
+              {filters.customer_type && (
+                <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary }]}>
+                  <Text style={[styles.activeFilterText, { color: theme.colors.primary }]}>
+                    Type: {filters.customer_type.charAt(0).toUpperCase() + filters.customer_type.slice(1)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setFilters(prev => ({ ...prev, customer_type: undefined }))}
+                    style={styles.removeFilterButton}
+                  >
+                    <X size={14} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {filters.payment_status && (
+                <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.status.warning + '20', borderColor: theme.colors.status.warning }]}>
+                  <Text style={[styles.activeFilterText, { color: theme.colors.status.warning }]}>
+                    Status: {filters.payment_status === 'red_listed' ? 'Red Listed' : filters.payment_status.charAt(0).toUpperCase() + filters.payment_status.slice(1)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setFilters(prev => ({ ...prev, payment_status: undefined }))}
+                    style={styles.removeFilterButton}
+                  >
+                    <X size={14} color={theme.colors.status.warning} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {filters.is_red_listed !== undefined && (
+                <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.status.error + '20', borderColor: theme.colors.status.error }]}>
+                  <Text style={[styles.activeFilterText, { color: theme.colors.status.error }]}>
+                    {filters.is_red_listed ? 'Red Listed Only' : 'Not Red Listed'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setFilters(prev => ({ ...prev, is_red_listed: undefined }))}
+                    style={styles.removeFilterButton}
+                  >
+                    <X size={14} color={theme.colors.status.error} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {filters.is_active !== undefined && (
+                <View style={[styles.activeFilterChip, { backgroundColor: theme.colors.status.success + '20', borderColor: theme.colors.status.success }]}>
+                  <Text style={[styles.activeFilterText, { color: theme.colors.status.success }]}>
+                    {filters.is_active ? 'Active Only' : 'Inactive Only'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setFilters(prev => ({ ...prev, is_active: undefined }))}
+                    style={styles.removeFilterButton}
+                  >
+                    <X size={14} color={theme.colors.status.success} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Red List Warning */}
         {activeTab === 'red-list' && (
@@ -888,6 +1276,9 @@ export default function CustomersPage() {
         onClose={() => setShowCustomerForm(false)}
         onSubmit={handleCustomerSubmit}
       />
+
+      {/* Filter Modal */}
+      {renderFilterModal()}
     </SharedLayout>
   );
 }
@@ -999,6 +1390,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   warningContainer: {
     marginHorizontal: 16,
@@ -1200,5 +1606,102 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  // Filter Modal Styles
+  filterModal: {
+    flex: 1,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  filterTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  filterContent: {
+    flex: 1,
+    padding: 16,
+  },
+  filterGroup: {
+    marginBottom: 24,
+  },
+  filterGroupTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 12,
+    borderTopWidth: 1,
+  },
+  clearButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  applyButton: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Active Filters Styles
+  activeFiltersContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  activeFiltersScroll: {
+    flexGrow: 0,
+  },
+  activeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  activeFilterText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginRight: 4,
+  },
+  removeFilterButton: {
+    padding: 2,
   },
 });

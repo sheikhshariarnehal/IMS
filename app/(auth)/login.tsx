@@ -29,27 +29,7 @@ interface LoginCredentials {
   rememberMe: boolean;
 }
 
-// Demo credentials for testing (updated for Supabase)
-const demoCredentials = [
-  {
-    email: 'admin@serranotex.com',
-    password: 'admin123',
-    role: 'Super Admin',
-    description: 'Full system access'
-  },
-  {
-    email: 'sales1@serranotex.com',
-    password: 'password',
-    role: 'Sales Manager',
-    description: 'Sales and customer management'
-  },
-  {
-    email: 'investor@serranotex.com',
-    password: 'password',
-    role: 'Investor',
-    description: 'Read-only dashboard access'
-  }
-];
+
 
 export default function LoginPage() {
   const { theme } = useTheme();
@@ -98,7 +78,7 @@ export default function LoginPage() {
       });
 
       if (!result.success) {
-        Alert.alert('Login Failed', result.error || 'Invalid email or password. Please use one of the demo credentials.');
+        Alert.alert('Login Failed', result.error || 'Invalid email or password. Please check your credentials and try again.');
         setIsLoading(false);
         return;
       }
@@ -126,10 +106,7 @@ export default function LoginPage() {
     }
   };
 
-  const fillDemoCredentials = (email: string, password: string) => {
-    setCredentials(prev => ({ ...prev, email, password }));
-    setValidationErrors({});
-  };
+
 
   const styles = StyleSheet.create({
     container: {
@@ -140,184 +117,173 @@ export default function LoginPage() {
       flexGrow: 1,
       justifyContent: 'center',
       padding: 24,
+      minHeight: '100%',
     },
     logoContainer: {
       alignItems: 'center',
-      marginBottom: 32,
+      marginBottom: 48,
     },
     logo: {
-      fontSize: 32,
-      fontWeight: 'bold',
+      fontSize: 36,
+      fontWeight: '700',
       color: theme.colors.primary,
-      marginBottom: 8,
+      marginBottom: 12,
+      letterSpacing: -0.5,
     },
     subtitle: {
-      fontSize: 18,
+      fontSize: 16,
       color: theme.colors.text.secondary,
       textAlign: 'center',
+      fontWeight: '400',
+      opacity: 0.8,
     },
     card: {
       backgroundColor: theme.colors.card,
-      borderRadius: 16,
-      padding: 24,
+      borderRadius: 20,
+      padding: 32,
       shadowColor: theme.colors.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 5,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '20',
     },
-    demoCredentials: {
-      backgroundColor: theme.colors.backgroundSecondary,
-      padding: 16,
-      borderRadius: 12,
-      marginBottom: 24,
+    welcomeContainer: {
+      marginBottom: 32,
+      alignItems: 'center',
     },
-    demoTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+    welcomeTitle: {
+      fontSize: 24,
+      fontWeight: '700',
       color: theme.colors.text.primary,
       marginBottom: 8,
+      letterSpacing: -0.3,
     },
-    demoSubtitle: {
-      fontSize: 12,
+    welcomeSubtitle: {
+      fontSize: 16,
       color: theme.colors.text.secondary,
-      marginBottom: 12,
-      fontStyle: 'italic',
-    },
-    demoItem: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    demoItemLast: {
-      borderBottomWidth: 0,
-    },
-    demoRole: {
-      fontSize: 14,
-      fontWeight: '500',
-      color: theme.colors.text.primary,
-    },
-    demoEmail: {
-      fontSize: 12,
-      color: theme.colors.text.secondary,
-      marginBottom: 2,
-    },
-    demoDescription: {
-      fontSize: 11,
-      color: theme.colors.text.muted,
-      fontStyle: 'italic',
-    },
-    demoButton: {
-      backgroundColor: theme.colors.primary + '20',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 6,
-    },
-    demoButtonText: {
-      fontSize: 12,
-      color: theme.colors.primary,
-      fontWeight: '500',
+      textAlign: 'center',
+      fontWeight: '400',
+      opacity: 0.8,
     },
     inputContainer: {
-      marginBottom: 16,
+      marginBottom: 20,
     },
     inputLabel: {
-      fontSize: 14,
-      fontWeight: '500',
+      fontSize: 15,
+      fontWeight: '600',
       color: theme.colors.text.primary,
-      marginBottom: 8,
+      marginBottom: 10,
+      letterSpacing: 0.2,
     },
     inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: theme.colors.input,
-      borderRadius: 12,
-      borderWidth: 1,
+      borderRadius: 14,
+      borderWidth: 1.5,
       borderColor: theme.colors.border,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      minHeight: 56,
     },
     inputWrapperError: {
       borderColor: theme.colors.status.error,
+      backgroundColor: theme.colors.status.error + '08',
     },
     inputIcon: {
-      marginRight: 12,
+      marginRight: 14,
+      opacity: 0.7,
     },
     textInput: {
       flex: 1,
       fontSize: 16,
       color: theme.colors.text.primary,
+      fontWeight: '400',
     },
     eyeButton: {
-      padding: 4,
+      padding: 8,
       marginLeft: 8,
+      borderRadius: 8,
     },
     errorText: {
-      fontSize: 12,
+      fontSize: 13,
       color: theme.colors.status.error,
-      marginTop: 4,
+      marginTop: 6,
+      fontWeight: '500',
     },
     rememberContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 24,
+      marginBottom: 32,
+      marginTop: 8,
     },
     rememberRow: {
       flexDirection: 'row',
       alignItems: 'center',
     },
     checkbox: {
-      width: 20,
-      height: 20,
-      borderRadius: 4,
+      width: 22,
+      height: 22,
+      borderRadius: 6,
       borderWidth: 2,
       borderColor: theme.colors.border,
-      marginRight: 8,
+      marginRight: 10,
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: theme.colors.background,
     },
     checkboxChecked: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     checkboxText: {
-      fontSize: 14,
+      fontSize: 15,
       color: theme.colors.text.primary,
+      fontWeight: '500',
     },
     forgotButton: {
-      padding: 4,
+      padding: 8,
     },
     forgotText: {
-      fontSize: 14,
+      fontSize: 15,
       color: theme.colors.primary,
-      textDecorationLine: 'underline',
+      fontWeight: '600',
     },
     loginButton: {
       backgroundColor: theme.colors.primary,
-      borderRadius: 12,
-      paddingVertical: 16,
+      borderRadius: 16,
+      paddingVertical: 18,
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'row',
+      minHeight: 56,
+      shadowColor: theme.colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
     },
     loginButtonDisabled: {
       opacity: 0.6,
+      shadowOpacity: 0.1,
     },
     loginButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: 17,
+      fontWeight: '700',
       color: theme.colors.text.inverse,
       marginLeft: 8,
+      letterSpacing: 0.3,
     },
     footer: {
       textAlign: 'center',
-      marginTop: 24,
-      fontSize: 12,
+      marginTop: 32,
+      fontSize: 13,
       color: theme.colors.text.muted,
+      fontWeight: '400',
+      opacity: 0.7,
     },
   });
 
@@ -337,31 +303,10 @@ export default function LoginPage() {
           </View>
 
           <View style={styles.card}>
-            {/* Demo Credentials */}
-            <View style={styles.demoCredentials}>
-              <Text style={styles.demoTitle}>Demo Credentials:</Text>
-              <Text style={styles.demoSubtitle}>
-                Use these credentials to test different user roles
-              </Text>
-
-              {demoCredentials.map((user, index) => (
-                <View
-                  key={user.email}
-                  style={[styles.demoItem, index === demoCredentials.length - 1 && styles.demoItemLast]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.demoRole}>{user.role}</Text>
-                    <Text style={styles.demoEmail}>{user.email}</Text>
-                    <Text style={styles.demoDescription}>{user.description}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.demoButton}
-                    onPress={() => fillDemoCredentials(user.email, user.password)}
-                  >
-                    <Text style={styles.demoButtonText}>Use</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+            {/* Welcome Message */}
+            <View style={styles.welcomeContainer}>
+              <Text style={styles.welcomeTitle}>Welcome Back</Text>
+              <Text style={styles.welcomeSubtitle}>Sign in to your account to continue</Text>
             </View>
 
             {/* Email Input */}

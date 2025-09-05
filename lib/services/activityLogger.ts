@@ -65,6 +65,10 @@ export class ActivityLogger {
         return;
       }
 
+      // Ensure user context is set for RLS before inserting
+      const { setUserContext } = await import('@/lib/supabase');
+      await setUserContext(this.currentUserId);
+
       // Sanitize and validate data
       const sanitizedDescription = data.description.substring(0, 500); // Limit description length
       const sanitizedEntityName = data.entityName ? data.entityName.substring(0, 200) : null;
@@ -86,17 +90,22 @@ export class ActivityLogger {
         created_at: new Date().toISOString()
       };
 
+      // Use direct table insert since RLS is disabled
       const { error } = await supabase
         .from('activity_logs')
         .insert(logEntry);
 
       if (error) {
         console.error('Failed to log activity:', error);
+        // Log additional context for debugging
+        console.error('Activity log entry that failed:', logEntry);
+        console.error('Current user ID:', this.currentUserId);
       } else {
         console.log('Activity logged successfully:', data.action, data.module);
       }
     } catch (error) {
       console.error('Error logging activity:', error);
+      console.error('Current user ID:', this.currentUserId);
     }
   }
 

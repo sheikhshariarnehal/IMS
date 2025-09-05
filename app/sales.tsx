@@ -9,6 +9,8 @@ import {
   FlatList,
   Alert,
   RefreshControl,
+  Modal,
+  SafeAreaView,
 } from 'react-native';
 import {
   Plus,
@@ -26,6 +28,8 @@ import {
   CheckCircle,
   XCircle,
   Phone,
+  X,
+  ChevronDown,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -307,6 +311,7 @@ export default function SalesPage() {
   const [filters, setFilters] = useState<SalesFilters>({});
   const [refreshing, setRefreshing] = useState(false);
   const [showSalesForm, setShowSalesForm] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Data fetching functions
@@ -461,6 +466,24 @@ export default function SalesPage() {
     await loadSalesData();
     setRefreshing(false);
   };
+
+  // Filter helper functions
+  const clearFilters = () => {
+    setFilters({});
+  };
+
+  const applyFilters = () => {
+    setShowFilters(false);
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.search) count++;
+    if (filters.customerId) count++;
+    if (filters.paymentStatus) count++;
+    if (filters.saleStatus) count++;
+    return count;
+  }, [filters]);
 
   const handleSalesSubmit = async (saleData: any) => {
     try {
@@ -636,8 +659,12 @@ export default function SalesPage() {
 
   const renderKPICards = () => {
     const totalSalesAmount = salesStats?.totalRevenue?.value || 0;
+    const totalSalesCount = salesStats?.totalSalesCount?.value || 0;
+    const totalItemsSold = salesStats?.totalItemsSold?.value || 0;
     const totalDueAmount = salesStats?.pendingAmount?.value || 0;
-    const overduePayments = salesStats?.overdueAmount?.value || 0;
+    const totalDueCount = salesStats?.totalDueCount?.value || 0;
+    const overduePaymentsAmount = salesStats?.overdueAmount?.value || 0;
+    const overduePaymentsCount = salesStats?.overduePaymentsCount?.value || 0;
     const redListCustomersCount = redListCustomers.length;
 
     return (
@@ -648,33 +675,37 @@ export default function SalesPage() {
               <DollarSign size={24} color={theme.colors.primary} />
             </View>
             <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>৳{totalSalesAmount.toLocaleString()}</Text>
+            <Text style={[styles.kpiSubValue, { color: theme.colors.text.secondary }]}>{totalSalesCount} Sales • {totalItemsSold} Items</Text>
             <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>Total Sales</Text>
           </View>
-          
+
           <View style={[styles.kpiCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
             <View style={[styles.kpiIcon, { backgroundColor: theme.colors.status.warning + '20' }]}>
               <Clock size={24} color={theme.colors.status.warning} />
             </View>
             <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>৳{totalDueAmount.toLocaleString()}</Text>
+            <Text style={[styles.kpiSubValue, { color: theme.colors.text.secondary }]}>{totalDueCount} Due Payments</Text>
             <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>Total Due</Text>
           </View>
         </View>
-        
+
         <View style={styles.kpiRow}>
           <View style={[styles.kpiCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
             <View style={[styles.kpiIcon, { backgroundColor: theme.colors.status.error + '20' }]}>
               <AlertTriangle size={24} color={theme.colors.status.error} />
             </View>
-            <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>{overduePayments}</Text>
+            <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>৳{overduePaymentsAmount.toLocaleString()}</Text>
+            <Text style={[styles.kpiSubValue, { color: theme.colors.text.secondary }]}>{overduePaymentsCount} Overdue</Text>
             <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>Overdue Payments</Text>
           </View>
-          
+
           <View style={[styles.kpiCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
             <View style={[styles.kpiIcon, { backgroundColor: theme.colors.status.error + '20' }]}>
               <Users size={24} color={theme.colors.status.error} />
             </View>
             <Text style={[styles.kpiValue, { color: theme.colors.text.primary }]}>{redListCustomersCount}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>Red List Customers</Text>
+            <Text style={[styles.kpiSubValue, { color: theme.colors.text.secondary }]}>Customers</Text>
+            <Text style={[styles.kpiLabel, { color: theme.colors.text.secondary }]}>Red List</Text>
           </View>
         </View>
       </View>
@@ -993,6 +1024,141 @@ export default function SalesPage() {
     }
   };
 
+  // Render filter modal
+  const renderFilterModal = () => {
+    const paymentStatusOptions = ['Paid', 'Partial', 'Due', 'Overdue'];
+    const saleStatusOptions = ['Pending', 'Confirmed', 'Delivered', 'Cancelled'];
+
+    return (
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <SafeAreaView style={[styles.filterModal, { backgroundColor: theme.colors.background }]}>
+          <View style={[styles.filterHeader, { borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.filterTitle, { color: theme.colors.text.primary }]}>
+              Filter Sales
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowFilters(false)}
+              style={styles.closeButton}
+            >
+              <X size={24} color={theme.colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.filterContent} showsVerticalScrollIndicator={false}>
+            {/* Payment Status Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Payment Status
+              </Text>
+              <View style={styles.filterChips}>
+                {paymentStatusOptions.map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.paymentStatus === status
+                          ? theme.colors.primary
+                          : theme.colors.backgroundSecondary,
+                        borderColor: filters.paymentStatus === status
+                          ? theme.colors.primary
+                          : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => {
+                      setFilters(prev => ({
+                        ...prev,
+                        paymentStatus: prev.paymentStatus === status ? undefined : status
+                      }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      {
+                        color: filters.paymentStatus === status
+                          ? theme.colors.background
+                          : theme.colors.text.primary
+                      }
+                    ]}>
+                      {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Sale Status Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Sale Status
+              </Text>
+              <View style={styles.filterChips}>
+                {saleStatusOptions.map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: filters.saleStatus === status
+                          ? theme.colors.status.info
+                          : theme.colors.backgroundSecondary,
+                        borderColor: filters.saleStatus === status
+                          ? theme.colors.status.info
+                          : theme.colors.border,
+                      }
+                    ]}
+                    onPress={() => {
+                      setFilters(prev => ({
+                        ...prev,
+                        saleStatus: prev.saleStatus === status ? undefined : status
+                      }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      {
+                        color: filters.saleStatus === status
+                          ? theme.colors.background
+                          : theme.colors.text.primary
+                      }
+                    ]}>
+                      {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Filter Actions */}
+          <View style={[styles.filterActions, { borderTopColor: theme.colors.border }]}>
+            <TouchableOpacity
+              style={[styles.filterActionButton, styles.clearButton, { borderColor: theme.colors.border }]}
+              onPress={clearFilters}
+            >
+              <Text style={[styles.filterActionText, { color: theme.colors.text.secondary }]}>
+                Clear All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterActionButton, styles.applyButton, { backgroundColor: theme.colors.primary }]}
+              onPress={applyFilters}
+            >
+              <Text style={[styles.filterActionText, { color: theme.colors.background }]}>
+                Apply Filters
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
   const renderSalesItem = ({ item }: { item: SalesItem }) => {
     switch (activeTab) {
       case 'sales':
@@ -1057,11 +1223,23 @@ export default function SalesPage() {
             />
           </View>
           <TouchableOpacity
-            style={[styles.filterButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+            style={[
+              styles.filterButton,
+              {
+                backgroundColor: activeFilterCount > 0 ? theme.colors.primary : theme.colors.backgroundSecondary
+              }
+            ]}
             activeOpacity={0.7}
-            onPress={() => Alert.alert('Filter', 'Filter functionality coming soon')}
+            onPress={() => setShowFilters(true)}
           >
-            <Filter size={20} color={theme.colors.primary} />
+            <Filter size={20} color={activeFilterCount > 0 ? theme.colors.background : theme.colors.primary} />
+            {activeFilterCount > 0 && (
+              <View style={[styles.filterBadge, { backgroundColor: theme.colors.background }]}>
+                <Text style={[styles.filterBadgeText, { color: theme.colors.primary }]}>
+                  {activeFilterCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -1115,6 +1293,9 @@ export default function SalesPage() {
         onSubmit={handleSalesSubmit}
         onSaveDraft={handleSaveDraft}
       />
+
+      {/* Filter Modal */}
+      {renderFilterModal()}
     </SharedLayout>
   );
 }
@@ -1187,7 +1368,13 @@ const styles = StyleSheet.create({
   kpiValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  kpiSubValue: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 4,
+    fontWeight: '400',
   },
   kpiLabel: {
     fontSize: 13,
@@ -1257,6 +1444,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   listContainer: {
     padding: 16,
@@ -1422,5 +1624,74 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  // Filter Modal Styles
+  filterModal: {
+    flex: 1,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  filterTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  filterContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  filterSection: {
+    marginVertical: 20,
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    gap: 12,
+  },
+  filterActionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  clearButton: {
+    borderWidth: 1,
+  },
+  applyButton: {
+    // backgroundColor set dynamically
+  },
+  filterActionText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -918,6 +918,42 @@ export class FormService {
             total_due: 0,
             created_at: new Date('2024-02-10').toISOString(),
             updated_at: new Date('2024-02-10').toISOString()
+          },
+          {
+            id: 4,
+            name: 'Slow Payer Ltd',
+            email: 'admin@slowpayer.com',
+            phone: '+8801878901234',
+            address: '456 Overdue Street, Dhaka',
+            company_name: 'Slow Payer Ltd',
+            delivery_address: '456 Overdue Street, Dhaka',
+            customer_type: 'regular',
+            fixed_coupon: null,
+            red_list_status: true,
+            total_due: 18500,
+            total_purchases: 45000,
+            red_list_since: '2024-07-20',
+            last_purchase_date: '2024-08-12',
+            created_at: new Date('2024-01-20').toISOString(),
+            updated_at: new Date('2024-07-20').toISOString()
+          },
+          {
+            id: 5,
+            name: 'Overdue Textiles',
+            email: 'contact@overduetextiles.com',
+            phone: '+8801987654321',
+            address: '789 Late Payment Ave, Chittagong',
+            company_name: 'Overdue Textiles',
+            delivery_address: '789 Late Payment Ave, Chittagong',
+            customer_type: 'wholesale',
+            fixed_coupon: 'WHOLESALE5',
+            red_list_status: true,
+            total_due: 25000,
+            total_purchases: 120000,
+            red_list_since: '2024-06-15',
+            last_purchase_date: '2024-07-20',
+            created_at: new Date('2024-01-05').toISOString(),
+            updated_at: new Date('2024-06-15').toISOString()
           }
         ];
 
@@ -987,11 +1023,40 @@ export class FormService {
             phone: '+8801878901234',
             total_due: 18500,
             red_list_since: '2024-07-20',
-            last_purchase_date: '2025-08-12',
-            days_since_last_purchase: 20,
-            overdue_count: 1,
+            last_purchase_date: '2024-08-12',
+            days_since_last_purchase: 85,
+            overdue_count: 3,
             overdue_amount: 18500,
-            total_sales_count: 1
+            total_sales_count: 5,
+            customer_type: 'regular'
+          },
+          {
+            id: 22,
+            name: 'Overdue Textiles',
+            email: 'contact@overduetextiles.com',
+            phone: '+8801987654321',
+            total_due: 25000,
+            red_list_since: '2024-06-15',
+            last_purchase_date: '2024-07-20',
+            days_since_last_purchase: 108,
+            overdue_count: 2,
+            overdue_amount: 25000,
+            total_sales_count: 8,
+            customer_type: 'wholesale'
+          },
+          {
+            id: 23,
+            name: 'Late Payment Co',
+            email: 'billing@latepayment.co',
+            phone: '+8801555666777',
+            total_due: 12000,
+            red_list_since: '2024-08-01',
+            last_purchase_date: '2024-09-01',
+            days_since_last_purchase: 35,
+            overdue_count: 1,
+            overdue_amount: 12000,
+            total_sales_count: 3,
+            customer_type: 'regular'
           }
         ];
       }
@@ -1470,9 +1535,11 @@ export class FormService {
         .select('total_amount, payment_status, created_at')
         .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
-      const { data: inventoryStats, error: inventoryError } = await supabase
-        .from('inventory_summary')
-        .select('*');
+      // Count total products from products table
+      const { count: totalProductsCount, error: productsError } = await supabase
+        .from('products')
+        .select('id', { count: 'exact' })
+        .eq('product_status', 'active');
 
       const { data: lowStockProducts, error: lowStockError } = await supabase
         .from('low_stock_products')
@@ -1485,7 +1552,7 @@ export class FormService {
       return {
         totalSales: { value: totalSales, formatted: `৳${totalSales.toLocaleString()}` },
         paidSales: { value: paidSales, formatted: `৳${paidSales.toLocaleString()}` },
-        totalProducts: { value: inventoryStats?.length || 0, formatted: (inventoryStats?.length || 0).toString() },
+        totalProducts: { value: totalProductsCount || 0, formatted: (totalProductsCount || 0).toString() },
         lowStockCount: { value: lowStockProducts?.length || 0, formatted: (lowStockProducts?.length || 0).toString() },
         alerts: [
           ...(lowStockProducts?.length > 0 ? [{
@@ -1885,7 +1952,12 @@ export class FormService {
           pendingSalesCount: { value: 1, formatted: '1' },
           overdueSalesCount: { value: 0, formatted: '0' },
           averageSaleValue: { value: 105000, formatted: '৳105,000' },
-          paymentRate: { value: 50, formatted: '50.0%' }
+          paymentRate: { value: 50, formatted: '50.0%' },
+          // Add new count fields
+          totalSalesCount: { value: 2, formatted: '2' },
+          totalDueCount: { value: 1, formatted: '1' },
+          overduePaymentsCount: { value: 0, formatted: '0' },
+          totalItemsSold: { value: 150, formatted: '150' }
         };
       }
 
@@ -1920,7 +1992,8 @@ export class FormService {
         const totalSales = sales.length;
         const totalRevenue = sales.reduce((sum, sale) => sum + parseFloat(sale.total_amount || '0'), 0);
         const paidSales = sales.filter(sale => sale.payment_status === 'paid');
-        const pendingSales = sales.filter(sale => sale.payment_status === 'pending');
+        const pendingSales = sales.filter(sale => sale.payment_status === 'pending' || sale.payment_status === 'partial');
+        const dueSales = sales.filter(sale => sale.payment_status !== 'paid' && parseFloat(sale.due_amount || '0') > 0);
         const overdueSales = sales.filter(sale =>
           sale.payment_status !== 'paid' &&
           sale.due_date &&
@@ -1930,6 +2003,21 @@ export class FormService {
         const totalPaid = paidSales.reduce((sum, sale) => sum + parseFloat(sale.total_amount || '0'), 0);
         const totalPending = pendingSales.reduce((sum, sale) => sum + parseFloat(sale.due_amount || '0'), 0);
         const totalOverdue = overdueSales.reduce((sum, sale) => sum + parseFloat(sale.due_amount || '0'), 0);
+
+        // Get total items sold from sale_items table
+        let totalItemsSold = 0;
+        try {
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('sale_items')
+            .select('quantity')
+            .in('sale_id', sales.map(sale => sale.id));
+
+          if (!itemsError && itemsData) {
+            totalItemsSold = itemsData.reduce((sum, item) => sum + (item.quantity || 0), 0);
+          }
+        } catch (error) {
+          console.warn('Could not fetch items count:', error);
+        }
 
         return {
           totalSales: { value: totalSales, formatted: totalSales.toString() },
@@ -1947,7 +2035,12 @@ export class FormService {
           paymentRate: {
             value: totalSales > 0 ? (paidSales.length / totalSales) * 100 : 0,
             formatted: totalSales > 0 ? `${((paidSales.length / totalSales) * 100).toFixed(1)}%` : '0%'
-          }
+          },
+          // Add new count fields
+          totalSalesCount: { value: totalSales, formatted: totalSales.toString() },
+          totalDueCount: { value: dueSales.length, formatted: dueSales.length.toString() },
+          overduePaymentsCount: { value: overdueSales.length, formatted: overdueSales.length.toString() },
+          totalItemsSold: { value: totalItemsSold, formatted: totalItemsSold.toString() }
         };
       }
 
@@ -1955,7 +2048,8 @@ export class FormService {
       const totalSales = sales.length;
       const totalRevenue = sales.reduce((sum, sale) => sum + parseFloat(sale.total_amount || '0'), 0);
       const paidSales = sales.filter(sale => sale.payment_status === 'paid');
-      const pendingSales = sales.filter(sale => sale.payment_status === 'pending');
+      const pendingSales = sales.filter(sale => sale.payment_status === 'pending' || sale.payment_status === 'partial');
+      const dueSales = sales.filter(sale => sale.payment_status !== 'paid' && parseFloat(sale.due_amount || '0') > 0);
       const overdueSales = sales.filter(sale =>
         sale.payment_status !== 'paid' &&
         sale.due_date &&
@@ -1965,6 +2059,21 @@ export class FormService {
       const totalPaid = paidSales.reduce((sum, sale) => sum + parseFloat(sale.total_amount || '0'), 0);
       const totalPending = pendingSales.reduce((sum, sale) => sum + parseFloat(sale.due_amount || '0'), 0);
       const totalOverdue = overdueSales.reduce((sum, sale) => sum + parseFloat(sale.due_amount || '0'), 0);
+
+      // Get total items sold from sale_items table
+      let totalItemsSold = 0;
+      try {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from('sale_items')
+          .select('quantity')
+          .in('sale_id', sales.map(sale => sale.id));
+
+        if (!itemsError && itemsData) {
+          totalItemsSold = itemsData.reduce((sum, item) => sum + (item.quantity || 0), 0);
+        }
+      } catch (error) {
+        console.warn('Could not fetch items count:', error);
+      }
 
       return {
         totalSales: { value: totalSales, formatted: totalSales.toString() },
@@ -1982,7 +2091,12 @@ export class FormService {
         paymentRate: {
           value: totalSales > 0 ? (paidSales.length / totalSales) * 100 : 0,
           formatted: totalSales > 0 ? `${((paidSales.length / totalSales) * 100).toFixed(1)}%` : '0%'
-        }
+        },
+        // Add new count fields
+        totalSalesCount: { value: totalSales, formatted: totalSales.toString() },
+        totalDueCount: { value: dueSales.length, formatted: dueSales.length.toString() },
+        overduePaymentsCount: { value: overdueSales.length, formatted: overdueSales.length.toString() },
+        totalItemsSold: { value: totalItemsSold, formatted: totalItemsSold.toString() }
       };
     } catch (error) {
       console.error('Error fetching sales stats:', error);
@@ -2607,7 +2721,12 @@ export class FormService {
       pendingSalesCount: { value: 0, formatted: '0' },
       overdueSalesCount: { value: 0, formatted: '0' },
       averageSaleValue: { value: 0, formatted: '৳0' },
-      paymentRate: { value: 0, formatted: '0%' }
+      paymentRate: { value: 0, formatted: '0%' },
+      // Add new count fields
+      totalSalesCount: { value: 0, formatted: '0' },
+      totalDueCount: { value: 0, formatted: '0' },
+      overduePaymentsCount: { value: 0, formatted: '0' },
+      totalItemsSold: { value: 0, formatted: '0' }
     };
   }
 }

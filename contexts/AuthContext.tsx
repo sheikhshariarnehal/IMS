@@ -167,10 +167,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const sessionData = await storage.getItem('userSession');
       if (sessionData) {
         const userSession: UserSession = JSON.parse(sessionData);
-        setUser(userSession);
+
+        // Check session expiration (24 hours)
+        const sessionAge = Date.now() - new Date(userSession.loginTime).getTime();
+        const sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+        if (sessionAge > sessionTimeout) {
+          console.log('❌ Session expired - clearing stored session');
+          await storage.removeItem('userSession');
+          setUser(null);
+          return;
+        }
+
+        // Validate session by checking if user still exists and is active
+        console.log('🔄 Validating stored session for:', userSession.email);
+        const validationResult = await testAuth(userSession.email);
+
+        if (validationResult.error || !validationResult.data) {
+          console.log('❌ Session validation failed - user not found or inactive');
+          // Clear invalid session
+          await storage.removeItem('userSession');
+          setUser(null);
+        } else {
+          console.log('✅ Session validation successful');
+          // Update user context for RLS
+          await setUserContext(userSession.id);
+          setUser(userSession);
+        }
       }
     } catch (error) {
       console.error('Failed to load user session:', error);
+      // Clear potentially corrupted session
+      try {
+        await storage.removeItem('userSession');
+      } catch (clearError) {
+        console.error('Failed to clear corrupted session:', clearError);
+      }
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
