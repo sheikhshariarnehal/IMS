@@ -140,26 +140,60 @@ const ProductsPage = React.memo(function ProductsPage() {
       const productsData = await FormService.getProducts(enhancedFilters, user?.id);
       console.log('📦 Raw products data:', productsData.length, 'products found');
 
+      // Debug: Log first product to see available fields
+      if (productsData.length > 0) {
+        console.log('🔍 First product data structure:', productsData[0]);
+        console.log('🔍 Available price fields:', {
+          purchase_price: productsData[0].purchase_price,
+          selling_price: productsData[0].selling_price,
+          per_meter_price: productsData[0].per_meter_price,
+          purchasePrice: productsData[0].purchasePrice,
+          sellingPrice: productsData[0].sellingPrice
+        });
+      }
+
       // Transform database products to UI format
-      const transformedProducts: Product[] = productsData.map((product: any) => ({
-        id: product.id.toString(),
-        name: product.name,
-        productCode: product.product_code,
-        category: product.category_name || 'Uncategorized',
-        purchasePrice: 0, // Will be calculated from lots
-        sellingPrice: 0, // Will be calculated from lots
-        currentStock: product.current_stock || 0,
-        supplier: product.supplier_name || 'Unknown',
-        dateAdded: new Date(product.created_at),
-        status: product.current_stock <= product.minimum_threshold ? 'Low Stock' :
-                product.current_stock === 0 ? 'Out of Stock' : 'In Stock',
-        location: product.location_name || 'Main Warehouse',
-        available: product.current_stock || 0,
-        reserved: 0, // Would need to calculate from pending orders
-        onHand: product.current_stock || 0,
-        minimumThreshold: product.minimum_threshold || 0,
-        image: product.image_url || null,
-      }));
+      const transformedProducts: Product[] = productsData.map((product: any) => {
+        // Helper function to safely parse numeric values
+        const parsePrice = (value: any): number => {
+          if (value === null || value === undefined) return 0;
+          const parsed = typeof value === 'string' ? parseFloat(value) : Number(value);
+          return isNaN(parsed) ? 0 : parsed;
+        };
+
+        // Get the best available price - prioritize selling_price, then per_meter_price, then purchase_price
+        const sellingPrice = parsePrice(product.selling_price) || parsePrice(product.per_meter_price) || 0;
+        const purchasePrice = parsePrice(product.purchase_price) || 0;
+
+        console.log(`💰 Product "${product.name}" prices:`, {
+          raw_selling_price: product.selling_price,
+          raw_per_meter_price: product.per_meter_price,
+          raw_purchase_price: product.purchase_price,
+          parsed_selling: sellingPrice,
+          parsed_purchase: purchasePrice,
+          product_object: product
+        });
+
+        return {
+          id: product.id.toString(),
+          name: product.name || 'Unknown Product',
+          productCode: product.product_code || 'N/A',
+          category: product.category_name || 'Uncategorized',
+          purchasePrice: purchasePrice,
+          sellingPrice: sellingPrice,
+          currentStock: parsePrice(product.current_stock),
+          supplier: product.supplier_name || 'Unknown',
+          dateAdded: new Date(product.created_at || Date.now()),
+          status: (parsePrice(product.current_stock) <= (product.minimum_threshold || 0)) ? 'Low Stock' :
+                  parsePrice(product.current_stock) === 0 ? 'Out of Stock' : 'In Stock',
+          location: product.location_name || 'Main Warehouse',
+          available: parsePrice(product.current_stock),
+          reserved: 0, // Would need to calculate from pending orders
+          onHand: parsePrice(product.current_stock),
+          minimumThreshold: product.minimum_threshold || 0,
+          image: product.image_url || null,
+        };
+      });
 
       setProducts(transformedProducts);
     } catch (error) {
@@ -384,10 +418,26 @@ const ProductsPage = React.memo(function ProductsPage() {
 
             {/* Price Information */}
             <View style={styles.priceContainer}>
-              <Text style={[styles.priceLabel, { color: theme.colors.text.secondary }]}>Price:</Text>
-              <Text style={[styles.priceValue, { color: theme.colors.primary }]}>
-                ৳{product.sellingPrice?.toLocaleString() || 'N/A'}
-              </Text>
+              {product.sellingPrice > 0 ? (
+                <>
+                  <Text style={[styles.priceLabel, { color: theme.colors.text.secondary }]}>Selling:</Text>
+                  <Text style={[styles.priceValue, { color: theme.colors.primary }]}>
+                    ৳{product.sellingPrice.toLocaleString()}
+                  </Text>
+                </>
+              ) : product.purchasePrice > 0 ? (
+                <>
+                  <Text style={[styles.priceLabel, { color: theme.colors.text.secondary }]}>Purchase:</Text>
+                  <Text style={[styles.priceValue, { color: theme.colors.status.warning }]}>
+                    ৳{product.purchasePrice.toLocaleString()}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.priceLabel, { color: theme.colors.text.secondary }]}>Price:</Text>
+                  <Text style={[styles.priceValue, { color: theme.colors.text.muted }]}>N/A</Text>
+                </>
+              )}
             </View>
           </View>
         </View>
