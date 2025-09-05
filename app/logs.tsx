@@ -121,31 +121,31 @@ export default function LogsPage() {
 
             // Fetch activity logs and stats from database
             const [logsData, statsData] = await Promise.all([
-                FormService.getActivityLogs(filters),
-                FormService.getActivityLogStats()
+                FormService.getActivityLogs(filters, user?.id),
+                FormService.getActivityLogStats(user?.id)
             ]);
 
             // Transform database logs to UI format
             const transformedLogs: MobileActivityLog[] = logsData.map((log: any) => ({
-                id: log.id.toString(),
+                id: log.id?.toString() || '',
                 userId: log.user_id?.toString() || '',
                 userName: log.users?.name || `User ${log.user_id || 'Unknown'}`,
                 userRole: log.users?.role || 'unknown',
-                action: log.action,
-                module: log.module,
-                description: log.description,
-                entityType: log.entity_type,
-                entityId: log.entity_id?.toString(),
-                entityName: log.entity_name,
+                action: log.action || 'UNKNOWN',
+                module: log.module || 'UNKNOWN',
+                description: log.description || 'No description available',
+                entityType: log.entity_type || '',
+                entityId: log.entity_id?.toString() || '',
+                entityName: log.entity_name || '',
                 oldValues: log.old_values,
                 newValues: log.new_values,
-                ipAddress: log.ip_address,
-                userAgent: log.user_agent,
-                timestamp: new Date(log.created_at),
-                severity: getSeverityFromAction(log.action),
-                creditAmount: log.credit_amount,
-                debitAmount: log.debit_amount,
-            }));
+                ipAddress: log.ip_address || '',
+                userAgent: log.user_agent || '',
+                timestamp: new Date(log.created_at || new Date()),
+                severity: getSeverityFromAction(log.action || 'VIEW'),
+                creditAmount: log.credit_amount || 0,
+                debitAmount: log.debit_amount || 0,
+            })).filter(log => log.id && log.action && log.module); // Filter out invalid logs
 
             setLogs(transformedLogs);
             setStats(statsData);
@@ -568,6 +568,12 @@ export default function LogsPage() {
     };
 
     const renderLogItem = ({ item }: { item: MobileActivityLog }) => {
+        // Validate item data
+        if (!item || !item.id || !item.action || !item.module) {
+            console.warn('Invalid log item:', item);
+            return null;
+        }
+
         const ActionIcon = getActionIcon(item.action);
         const ModuleIcon = getModuleIcon(item.module);
         const severityColor = getSeverityColor(item.severity);
@@ -596,11 +602,11 @@ export default function LogsPage() {
                                 style={[styles.logTitle, { color: theme.colors.text.primary }]}
                                 numberOfLines={1}
                             >
-                                {item.description}
+                                {item.description || 'No description'}
                             </Text>
                             <View style={[styles.severityBadge, { backgroundColor: severityColor + '20' }]}>
                                 <Text style={[styles.severityText, { color: severityColor }]}>
-                                    {item.severity}
+                                    {item.severity || 'LOW'}
                                 </Text>
                             </View>
                         </View>
@@ -609,14 +615,14 @@ export default function LogsPage() {
                             <View style={styles.userInfo}>
                                 <User size={12} color={theme.colors.text.muted} />
                                 <Text style={[styles.userName, { color: theme.colors.text.secondary }]}>
-                                    {item.userName}
+                                    {item.userName || 'Unknown User'}
                                 </Text>
                             </View>
 
                             <View style={styles.moduleInfo}>
                                 <ModuleIcon size={12} color={theme.colors.text.muted} />
                                 <Text style={[styles.moduleName, { color: theme.colors.text.secondary }]}>
-                                    {item.module}
+                                    {item.module || 'UNKNOWN'}
                                 </Text>
                             </View>
                         </View>
@@ -625,13 +631,13 @@ export default function LogsPage() {
                             <View style={styles.timeContainer}>
                                 <Clock size={12} color={theme.colors.text.muted} />
                                 <Text style={[styles.timeText, { color: theme.colors.text.muted }]}>
-                                    {item.timestamp.toLocaleDateString()} {item.timestamp.toLocaleTimeString()}
+                                    {item.timestamp?.toLocaleDateString() || 'N/A'} {item.timestamp?.toLocaleTimeString() || ''}
                                 </Text>
                             </View>
 
                             <View style={[styles.actionBadge, { backgroundColor: theme.colors.primary + '20' }]}>
                                 <Text style={[styles.actionText, { color: theme.colors.primary }]}>
-                                    {item.action}
+                                    {item.action || 'UNKNOWN'}
                                 </Text>
                             </View>
                         </View>

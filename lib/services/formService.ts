@@ -225,6 +225,11 @@ export class FormService {
         }
       }
 
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('PRODUCTS', product.name, product.id, product);
+      }
+
       return { success: true, data: product };
     } catch (error) {
       console.error('❌ Error creating product:', error);
@@ -738,6 +743,14 @@ export class FormService {
       // Calculate and update total_stock from all lots
       const totalStock = await this.calculateAndUpdateTotalStock(productId);
 
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logUpdate('PRODUCTS', updatedProduct.name, productId,
+          { current_stock: existingProduct.current_stock },
+          { current_stock: updatedProduct.current_stock, added_stock: stockData.current_stock }
+        );
+      }
+
       return {
         success: true,
         data: {
@@ -842,6 +855,12 @@ export class FormService {
       }
 
       console.log('✅ Customer created successfully:', customer);
+
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('CUSTOMERS', customer.name, customer.id, customer);
+      }
+
       return { success: true, data: customer };
     } catch (error) {
       console.error('❌ Exception in createCustomer:', error);
@@ -1040,6 +1059,11 @@ export class FormService {
         return { success: false, error: error.message };
       }
 
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('SUPPLIERS', supplier.name, supplier.id, supplier);
+      }
+
       return { success: true, data: supplier };
     } catch (error) {
       console.error('Error creating supplier:', error);
@@ -1184,6 +1208,11 @@ export class FormService {
         return { success: false, error: error.message };
       }
 
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('CATEGORIES', category.name, category.id, category);
+      }
+
       return { success: true, data: category };
     } catch (error) {
       console.error('Error creating category:', error);
@@ -1264,6 +1293,11 @@ export class FormService {
       if (error) {
         console.error('Error creating sale:', error);
         return { success: false, error: error.message };
+      }
+
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logSale(sale.sale_number || `SALE-${sale.id}`, sale.total_amount, sale.customer_name);
       }
 
       return { success: true, data: sale };
@@ -1513,15 +1547,39 @@ export class FormService {
   }
 
   // Activity Log Operations
-  static async getActivityLogs(filters?: any): Promise<any[]> {
+  static async getActivityLogs(filters?: any, userId?: number): Promise<any[]> {
     try {
-      await this.ensureUserContext();
+      // Ensure user context is set for RLS
+      if (userId) {
+        await this.ensureUserContext(userId);
+      } else {
+        console.warn('⚠️ No userId provided to getActivityLogs - RLS policies may not work correctly');
+      }
 
       // Calculate 60 days ago from today
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
       const startDate = filters?.dateFrom || sixtyDaysAgo.toISOString();
       const endDate = filters?.dateTo || new Date().toISOString();
+
+      console.log('🔄 Fetching activity logs with date range:', startDate, 'to', endDate);
+
+      // Validate date range
+      if (new Date(startDate) > new Date(endDate)) {
+        console.error('Invalid date range: start date is after end date');
+        return [];
+      }
+
+      // Validate filters
+      if (filters?.module && !['AUTH', 'PRODUCTS', 'INVENTORY', 'SALES', 'CUSTOMERS', 'REPORTS', 'SETTINGS', 'SAMPLES', 'TRANSFERS', 'SALE'].includes(filters.module)) {
+        console.warn('Invalid module filter:', filters.module);
+        delete filters.module;
+      }
+
+      if (filters?.action && !['CREATE', 'UPDATE', 'DELETE', 'VIEW', 'LOGIN', 'LOGOUT', 'COMPLETE', 'TRANSFER'].includes(filters.action)) {
+        console.warn('Invalid action filter:', filters.action);
+        delete filters.action;
+      }
 
       // Build query with user join to get user names
       let query = supabase
@@ -1569,9 +1627,34 @@ export class FormService {
           console.error('Fallback activity logs query failed:', fallbackError);
           return [];
         }
-        return fallbackData || [];
+
+        // Transform fallback data to include user info
+        const validatedData = (fallbackData || []).filter(log =>
+          log &&
+          log.id &&
+          log.action &&
+          log.module &&
+          log.created_at
+        ).map((log: any) => ({
+          ...log,
+          users: null // Will be handled in the UI
+        }));
+
+        console.log('✅ Fallback query returned', validatedData.length, 'validated logs');
+        return validatedData;
       }
-      return data || [];
+
+      // Validate and clean the main query data
+      const validatedData = (data || []).filter(log =>
+        log &&
+        log.id &&
+        log.action &&
+        log.module &&
+        log.created_at
+      );
+
+      console.log('✅ Successfully fetched', validatedData.length, 'validated activity logs');
+      return validatedData;
     } catch (error) {
       console.error('Error fetching activity logs:', error);
       return [];
@@ -1579,9 +1662,14 @@ export class FormService {
   }
 
   // Get activity log statistics
-  static async getActivityLogStats(): Promise<any> {
+  static async getActivityLogStats(userId?: number): Promise<any> {
     try {
-      await this.ensureUserContext();
+      // Ensure user context is set for RLS
+      if (userId) {
+        await this.ensureUserContext(userId);
+      } else {
+        console.warn('⚠️ No userId provided to getActivityLogStats - RLS policies may not work correctly');
+      }
 
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
@@ -1634,12 +1722,16 @@ export class FormService {
         mostActiveUser = mostActive.name;
       }
 
-      return {
-        totalActivities: totalData?.length || 0,
-        todaysActivities: todayData?.length || 0,
-        criticalEvents: criticalData?.length || 0,
-        mostActiveUser
+      // Validate and return stats
+      const stats = {
+        totalActivities: Math.max(0, totalData?.length || 0),
+        todaysActivities: Math.max(0, todayData?.length || 0),
+        criticalEvents: Math.max(0, criticalData?.length || 0),
+        mostActiveUser: mostActiveUser || 'N/A'
       };
+
+      console.log('✅ Activity log stats calculated:', stats);
+      return stats;
     } catch (error) {
       console.error('Error fetching activity log stats:', error);
       return {
@@ -2050,6 +2142,11 @@ export class FormService {
       const createdUser = Array.isArray(user) ? user[0] : user;
       console.log('✅ User created successfully:', createdUser);
 
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('SETTINGS', `User: ${createdUser.name}`, createdUser.id, createdUser);
+      }
+
       return { success: true, data: createdUser };
     } catch (error) {
       console.error('❌ Error creating user:', error);
@@ -2130,6 +2227,12 @@ export class FormService {
 
       const updatedUser = users[0];
       console.log('✅ User updated successfully:', updatedUser);
+
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logUpdate('SETTINGS', `User: ${updatedUser.name}`, updatedUser.id, data, updatedUser);
+      }
+
       return { success: true, data: updatedUser };
     } catch (error) {
       console.error('❌ Error updating user:', error);
@@ -2196,6 +2299,11 @@ export class FormService {
       if (error) {
         console.error('Error creating transfer:', error);
         return { success: false, error: error.message };
+      }
+
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logCreate('TRANSFERS', `Transfer ${transfer.id}`, transfer.id, transfer);
       }
 
       return { success: true, data: transfer };
@@ -2304,6 +2412,24 @@ export class FormService {
           console.error('Error updating source product stock:', updateSourceError);
           // Don't fail the transfer for this, just log it
         }
+      }
+
+      // Log activity
+      if (!isDemoMode) {
+        // Get product name for logging
+        const { data: product } = await supabase
+          .from('products')
+          .select('name')
+          .eq('id', transferData.product_id)
+          .single();
+
+        const productName = product?.name || 'Unknown Product';
+        await activityLogger.logTransfer(
+          `Location ${transferData.from_location_id}`,
+          `Location ${transferData.to_location_id}`,
+          productName,
+          transferData.quantity
+        );
       }
 
       return {

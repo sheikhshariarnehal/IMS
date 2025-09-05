@@ -45,18 +45,42 @@ export class ActivityLogger {
         return;
       }
 
+      // Validate required fields
+      if (!data.action || !data.module || !data.description) {
+        console.error('Invalid activity log data: missing required fields', data);
+        return;
+      }
+
+      // Validate action and module values
+      const validActions = ['CREATE', 'UPDATE', 'DELETE', 'VIEW', 'LOGIN', 'LOGOUT', 'COMPLETE', 'TRANSFER'];
+      const validModules = ['AUTH', 'PRODUCTS', 'INVENTORY', 'SALES', 'CUSTOMERS', 'REPORTS', 'SETTINGS', 'SAMPLES', 'TRANSFERS', 'SALE'];
+
+      if (!validActions.includes(data.action)) {
+        console.error('Invalid action for activity log:', data.action);
+        return;
+      }
+
+      if (!validModules.includes(data.module)) {
+        console.error('Invalid module for activity log:', data.module);
+        return;
+      }
+
+      // Sanitize and validate data
+      const sanitizedDescription = data.description.substring(0, 500); // Limit description length
+      const sanitizedEntityName = data.entityName ? data.entityName.substring(0, 200) : null;
+
       const logEntry = {
         user_id: this.currentUserId,
         action: data.action,
         module: data.module,
-        description: data.description,
-        entity_type: data.entityType,
-        entity_id: data.entityId ? parseInt(data.entityId.toString()) : null,
-        entity_name: data.entityName,
-        old_values: data.oldValues ? JSON.stringify(data.oldValues) : null,
-        new_values: data.newValues ? JSON.stringify(data.newValues) : null,
-        credit_amount: data.creditAmount || 0,
-        debit_amount: data.debitAmount || 0,
+        description: sanitizedDescription,
+        entity_type: data.entityType || null,
+        entity_id: data.entityId ? Math.max(0, parseInt(data.entityId.toString())) : null,
+        entity_name: sanitizedEntityName,
+        old_values: data.oldValues ? this.safeStringify(data.oldValues) : null,
+        new_values: data.newValues ? this.safeStringify(data.newValues) : null,
+        credit_amount: Math.max(0, data.creditAmount || 0),
+        debit_amount: Math.max(0, data.debitAmount || 0),
         ip_address: data.ipAddress || this.getClientIP(),
         user_agent: data.userAgent || this.getUserAgent(),
         created_at: new Date().toISOString()
@@ -188,6 +212,20 @@ export class ActivityLogger {
       return navigator.userAgent;
     }
     return 'Mobile App';
+  }
+
+  private safeStringify(obj: any): string | null {
+    try {
+      if (obj === null || obj === undefined) {
+        return null;
+      }
+      const stringified = JSON.stringify(obj);
+      // Limit JSON size to prevent database issues
+      return stringified.length > 10000 ? stringified.substring(0, 10000) + '...[truncated]' : stringified;
+    } catch (error) {
+      console.warn('Failed to stringify object for activity log:', error);
+      return '[Unable to serialize]';
+    }
   }
 }
 
