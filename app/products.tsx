@@ -26,6 +26,11 @@ import {
   TrendingUp,
   AlertTriangle,
   CheckCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Star,
+  X,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -58,6 +63,8 @@ interface ProductFilters {
   category: string; // Will store category ID
   status: string;
   location: string; // Will store location ID
+  sortBy: 'name' | 'price' | 'stock' | 'date' | 'topSelling';
+  sortOrder: 'asc' | 'desc';
 }
 
 // Product interfaces are now imported from product-service
@@ -72,11 +79,15 @@ const ProductsPage = React.memo(function ProductsPage() {
     search: '',
     category: '',
     status: '',
-    location: ''
+    location: '',
+    sortBy: 'name',
+    sortOrder: 'asc'
   });
   const [refreshing, setRefreshing] = useState(false);
   const [selectedView, setSelectedView] = useState<'list' | 'grid'>('list');
   const [showProductForm, setShowProductForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
   // Filter options data
@@ -214,9 +225,9 @@ const ProductsPage = React.memo(function ProductsPage() {
     setRefreshing(false);
   }, [loadProducts]);
 
-  // Filter products based on current filters
+  // Filter and sort products based on current filters
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    let filtered = products.filter(product => {
       // Search filter - check name and product code
       if (filters.search &&
           !product.name.toLowerCase().includes(filters.search.toLowerCase()) &&
@@ -247,6 +258,36 @@ const ProductsPage = React.memo(function ProductsPage() {
 
       return true;
     });
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+
+      switch (filters.sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'price':
+          comparison = a.sellingPrice - b.sellingPrice;
+          break;
+        case 'stock':
+          comparison = a.currentStock - b.currentStock;
+          break;
+        case 'date':
+          comparison = new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
+          break;
+        case 'topSelling':
+          // For top selling, we'll use current stock as a proxy (lower stock = more sold)
+          comparison = a.currentStock - b.currentStock;
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return filters.sortOrder === 'desc' ? -comparison : comparison;
+    });
+
+    return filtered;
   }, [products, filters, categories, locations]);
 
   const getStatusColor = useCallback((status: string) => {
@@ -278,7 +319,8 @@ const ProductsPage = React.memo(function ProductsPage() {
           Alert.alert('Permission Denied', 'You do not have permission to edit products.');
           return;
         }
-        Alert.alert('Edit Product', `Editing ${product.name}`);
+        setEditingProduct(product);
+        setShowEditForm(true);
         break;
       case 'delete':
         if (!hasPermission('products', 'delete')) {
@@ -315,14 +357,23 @@ const ProductsPage = React.memo(function ProductsPage() {
 
   const renderProductCard = useCallback(({ item: product }: { item: Product }) => {
     const StatusIcon = getStatusIcon(product.status || 'In Stock');
+    const statusColor = getStatusColor(product.status || 'In Stock');
 
     return (
       <View style={[styles.productCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+        {/* Header with Image and Basic Info */}
         <View style={styles.productHeader}>
-          <Image
-            source={{ uri: product.image || 'https://via.placeholder.com/60x60?text=No+Image' }}
-            style={styles.productImage}
-          />
+          <View style={styles.productImageContainer}>
+            <Image
+              source={{ uri: product.image || 'https://via.placeholder.com/72x72?text=No+Image' }}
+              style={[styles.productImage, { backgroundColor: theme.colors.backgroundSecondary }]}
+              resizeMode="cover"
+            />
+            <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+              <StatusIcon size={10} color={theme.colors.background} />
+            </View>
+          </View>
+
           <View style={styles.productInfo}>
             <Text style={[styles.productName, { color: theme.colors.text.primary }]} numberOfLines={2}>
               {product.name}
@@ -330,66 +381,90 @@ const ProductsPage = React.memo(function ProductsPage() {
             <Text style={[styles.productCode, { color: theme.colors.text.secondary }]}>
               {product.productCode}
             </Text>
-            <View style={styles.statusContainer}>
-              <StatusIcon size={12} color={getStatusColor(product.status || 'In Stock')} />
-              <Text style={[styles.statusText, { color: getStatusColor(product.status || 'In Stock') }]}>
-                {product.status || 'In Stock'}
+
+            {/* Price Information */}
+            <View style={styles.priceContainer}>
+              <Text style={[styles.priceLabel, { color: theme.colors.text.secondary }]}>Price:</Text>
+              <Text style={[styles.priceValue, { color: theme.colors.primary }]}>
+                ৳{product.sellingPrice?.toLocaleString() || 'N/A'}
               </Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.productDetails}>
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: theme.colors.text.secondary }]}>Category:</Text>
-            <Text style={[styles.detailValue, { color: theme.colors.text.primary }]}>{product.category || 'N/A'}</Text>
+        {/* Status and Category Row */}
+        <View style={styles.infoRow}>
+          <View style={[styles.statusContainer, { backgroundColor: statusColor + '15' }]}>
+            <StatusIcon size={12} color={statusColor} />
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {product.status || 'In Stock'}
+            </Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: theme.colors.text.secondary }]}>Location:</Text>
-            <View style={styles.locationContainer}>
-              <MapPin size={12} color={theme.colors.text.secondary} />
-              <Text style={[styles.detailValue, { color: theme.colors.text.primary }]}>{product.location || 'N/A'}</Text>
-            </View>
-          </View>
-          <View style={styles.stockInfo}>
-            <View style={styles.stockItem}>
-              <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Available</Text>
-              <Text style={[styles.stockValue, { color: theme.colors.primary }]}>{product.available}</Text>
-            </View>
-            <View style={styles.stockItem}>
-              <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Current</Text>
-              <Text style={[styles.stockValue, { color: theme.colors.primary }]}>{product.currentStock}</Text>
-            </View>
-            <View style={styles.stockItem}>
-              <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Reserved</Text>
-              <Text style={[styles.stockValue, { color: theme.colors.primary }]}>{product.reserved}</Text>
-            </View>
+
+          <View style={[styles.categoryContainer, { backgroundColor: theme.colors.primary + '10' }]}>
+            <Package size={12} color={theme.colors.primary} />
+            <Text style={[styles.categoryText, { color: theme.colors.primary }]}>
+              {product.category || 'N/A'}
+            </Text>
           </View>
         </View>
 
+        {/* Location */}
+        <View style={[styles.locationContainer, { backgroundColor: theme.colors.backgroundSecondary }]}>
+          <MapPin size={14} color={theme.colors.text.secondary} />
+          <Text style={[styles.locationText, { color: theme.colors.text.primary }]}>
+            {product.location || 'No Location'}
+          </Text>
+        </View>
+
+        {/* Stock Information */}
+        <View style={[styles.stockInfo, { backgroundColor: theme.colors.backgroundTertiary }]}>
+          <View style={styles.stockItem}>
+            <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Available</Text>
+            <Text style={[styles.stockValue, { color: theme.colors.status.success }]}>
+              {product.available || 0}
+            </Text>
+          </View>
+          <View style={styles.stockDivider} />
+          <View style={styles.stockItem}>
+            <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Current</Text>
+            <Text style={[styles.stockValue, { color: theme.colors.primary }]}>
+              {product.currentStock || 0}
+            </Text>
+          </View>
+          <View style={styles.stockDivider} />
+          <View style={styles.stockItem}>
+            <Text style={[styles.stockLabel, { color: theme.colors.text.secondary }]}>Reserved</Text>
+            <Text style={[styles.stockValue, { color: theme.colors.status.warning }]}>
+              {product.reserved || 0}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
         <View style={styles.productActions}>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.colors.status.info + '20' }]}
+            style={[styles.actionButton, { backgroundColor: theme.colors.status.info + '15' }]}
             onPress={() => handleProductAction('view', product)}
           >
-            <Eye size={16} color={theme.colors.status.info} />
+            <Eye size={18} color={theme.colors.status.info} />
           </TouchableOpacity>
 
           {hasPermission('products', 'edit') && (
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '20' }]}
+              style={[styles.actionButton, { backgroundColor: theme.colors.status.warning + '15' }]}
               onPress={() => handleProductAction('edit', product)}
             >
-              <Edit size={16} color={theme.colors.status.warning} />
+              <Edit size={18} color={theme.colors.status.warning} />
             </TouchableOpacity>
           )}
 
           {hasPermission('products', 'delete') && (
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: theme.colors.status.error + '20' }]}
+              style={[styles.actionButton, { backgroundColor: theme.colors.status.error + '15' }]}
               onPress={() => handleProductAction('delete', product)}
             >
-              <Trash2 size={16} color={theme.colors.status.error} />
+              <Trash2 size={18} color={theme.colors.status.error} />
             </TouchableOpacity>
           )}
         </View>
@@ -411,7 +486,9 @@ const ProductsPage = React.memo(function ProductsPage() {
       search: '',
       category: '',
       status: '',
-      location: ''
+      location: '',
+      sortBy: 'name',
+      sortOrder: 'asc'
     });
   }, []);
 
@@ -591,6 +668,51 @@ const ProductsPage = React.memo(function ProductsPage() {
                 ))}
               </ScrollView>
             </View>
+
+            {/* Sort Options */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, { color: theme.colors.text.primary }]}>
+                Sort By
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChips}>
+                {[
+                  { key: 'name', label: 'Name', icon: ArrowUpDown },
+                  { key: 'price', label: 'Price', icon: ArrowUpDown },
+                  { key: 'stock', label: 'Stock', icon: ArrowUpDown },
+                  { key: 'date', label: 'Date Added', icon: ArrowUpDown },
+                  { key: 'topSelling', label: 'Top Selling', icon: Star },
+                ].map((sortOption) => {
+                  const IconComponent = sortOption.icon;
+                  const isSelected = filters.sortBy === sortOption.key;
+                  return (
+                    <TouchableOpacity
+                      key={sortOption.key}
+                      style={[
+                        styles.filterChip,
+                        {
+                          backgroundColor: isSelected ? theme.colors.primary : theme.colors.backgroundSecondary,
+                          borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+                        }
+                      ]}
+                      onPress={() => setFilters(prev => ({ ...prev, sortBy: sortOption.key as any }))}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <IconComponent
+                          size={14}
+                          color={isSelected ? theme.colors.background : theme.colors.text.primary}
+                        />
+                        <Text style={[
+                          styles.filterChipText,
+                          { color: isSelected ? theme.colors.background : theme.colors.text.primary }
+                        ]}>
+                          {sortOption.label}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
           </ScrollView>
 
           {/* Filter Actions */}
@@ -669,6 +791,40 @@ const ProductsPage = React.memo(function ProductsPage() {
     }
   }, [user, loadProducts]);
 
+  const handleProductEdit = useCallback(async (data: any) => {
+    console.log('=== PRODUCT EDIT STARTED ===');
+    console.log('Edit data received:', data);
+    console.log('Editing product:', editingProduct?.name);
+
+    if (!user) {
+      Alert.alert('Authentication Error', 'You must be logged in to edit products.');
+      return;
+    }
+
+    try {
+      console.log('Mock product update for demo...');
+      console.log('User ID:', user?.id);
+      console.log('Product ID:', editingProduct?.id);
+
+      // Mock product update for demo
+      const result = { ...editingProduct, ...data, updated_at: new Date().toISOString() };
+      console.log('✅ Product updated successfully:', result);
+
+      Alert.alert('Success', `Product "${editingProduct?.name}" updated successfully!`);
+      setShowEditForm(false);
+      setEditingProduct(null);
+      loadProducts(); // Refresh the list
+    } catch (error) {
+      console.error('=== ERROR IN PRODUCT EDIT ===');
+      console.error('Error updating product:', error);
+      console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert('Error', `Failed to update product: ${errorMessage}`);
+    }
+  }, [user, editingProduct, loadProducts]);
+
   return (
     <SharedLayout title="Products">
       <View style={styles.headerActions}>
@@ -699,6 +855,19 @@ const ProductsPage = React.memo(function ProductsPage() {
             onChangeText={(text) => setFilters(prev => ({ ...prev, search: text }))}
           />
         </View>
+        <TouchableOpacity
+          style={[styles.sortButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+          onPress={() => {
+            const newOrder = filters.sortOrder === 'asc' ? 'desc' : 'asc';
+            setFilters(prev => ({ ...prev, sortOrder: newOrder }));
+          }}
+        >
+          {filters.sortOrder === 'asc' ? (
+            <ArrowUp size={18} color={theme.colors.primary} />
+          ) : (
+            <ArrowDown size={18} color={theme.colors.primary} />
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.filterButton, { backgroundColor: theme.colors.backgroundSecondary }]}
           onPress={() => setShowFilters(true)}
@@ -804,6 +973,17 @@ const ProductsPage = React.memo(function ProductsPage() {
         onSubmit={handleProductSubmit}
       />
 
+      {/* Product Edit Form */}
+      <ProductAddForm
+        visible={showEditForm}
+        onClose={() => {
+          setShowEditForm(false);
+          setEditingProduct(null);
+        }}
+        onSubmit={handleProductEdit}
+        existingProduct={editingProduct}
+      />
+
       {/* Filter Modal */}
       {renderFilterModal()}
 
@@ -822,157 +1002,277 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  searchInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-  },
-  filterButton: {
     width: 44,
     height: 44,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 12,
+    backgroundColor: 'transparent',
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  sortButton: {
+    width: 44,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    marginRight: 8,
+  },
+  filterButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   productsList: {
     flex: 1,
   },
   productsContainer: {
-    padding: 16,
-    gap: 12,
+    padding: 20,
+    gap: 16,
+    paddingBottom: 100, // Extra padding for bottom navigation
   },
   productCard: {
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+    marginHorizontal: 2, // Prevent shadow clipping
   },
   productHeader: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  productImageContainer: {
+    position: 'relative',
+    marginRight: 16,
   },
   productImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 12,
+    width: 72,
+    height: 72,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
   },
   productInfo: {
     flex: 1,
+    justifyContent: 'flex-start',
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+    lineHeight: 24,
   },
   productCode: {
-    fontSize: 12,
+    fontSize: 13,
     marginBottom: 8,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priceLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  priceValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    flex: 1,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  productDetails: {
-    marginBottom: 12,
-  },
-  detailRow: {
+  categoryContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    flex: 1,
   },
-  detailLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  detailValue: {
+  categoryText: {
     fontSize: 12,
     fontWeight: '600',
   },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  locationText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   stockInfo: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
   },
   stockItem: {
     alignItems: 'center',
+    flex: 1,
+  },
+  stockDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    marginHorizontal: 8,
   },
   stockLabel: {
-    fontSize: 10,
-    marginBottom: 2,
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    opacity: 0.7,
   },
   stockValue: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 20,
   },
   productActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
+    justifyContent: 'space-around',
+    gap: 12,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+    marginTop: 4,
   },
   actionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 64,
+    paddingVertical: 80,
+    paddingHorizontal: 40,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 20,
+    textAlign: 'center',
   },
   emptySubtext: {
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: 15,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 22,
+    opacity: 0.8,
   },
   // Filter styles
   filterBadge: {
@@ -996,17 +1296,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
     borderBottomWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   filterTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
   },
   closeButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderRadius: 8,
   },
   closeButtonText: {
     fontSize: 16,
@@ -1014,43 +1320,56 @@ const styles = StyleSheet.create({
   },
   filterContent: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    paddingTop: 8,
   },
   filterSection: {
-    marginVertical: 20,
+    marginVertical: 24,
   },
   filterSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 16,
+    letterSpacing: 0.3,
   },
   filterChips: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 10,
   },
   filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    marginRight: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   filterChipText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   filterActions: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
     borderTopWidth: 1,
-    gap: 12,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   clearButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
     alignItems: 'center',
   },
   clearButtonText: {
@@ -1059,9 +1378,14 @@ const styles = StyleSheet.create({
   },
   applyButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   applyButtonText: {
     fontSize: 16,
@@ -1069,8 +1393,8 @@ const styles = StyleSheet.create({
   },
   // Active filters styles
   activeFiltersContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   activeFiltersScroll: {
     flexDirection: 'row',
@@ -1078,38 +1402,43 @@ const styles = StyleSheet.create({
   activeFilterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
-    marginRight: 8,
+    marginRight: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   activeFilterText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
   removeFilterButton: {
-    marginLeft: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    marginLeft: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
   removeFilterText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   clearAllFiltersButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   clearAllFiltersText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
