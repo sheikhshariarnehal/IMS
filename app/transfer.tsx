@@ -170,6 +170,76 @@ const TransferPage = React.memo(function TransferPage() {
       const accessibleLocations = getAccessibleLocations();
       console.log('📍 Accessible locations for user:', accessibleLocations);
 
+      // Apply location filtering for non-super admin users
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        console.log('🔒 Applying location filter for role:', user?.role);
+        console.log('📍 Filtering by accessible locations:', accessibleLocations);
+        const locationIds = accessibleLocations.map(id => parseInt(id));
+
+        // Query products that have lots in accessible locations
+        // This ensures we show products that have any lots in permitted locations
+        const { data: productsWithAccessibleLots, error: lotError } = await supabase
+          .from('products_lot')
+          .select('product_id')
+          .in('location_id', locationIds)
+          .gt('quantity', 0); // Only lots with available quantity
+
+        if (lotError) {
+          console.error('❌ Error fetching accessible product lots:', lotError);
+          return;
+        }
+
+        const accessibleProductIds = [...new Set(productsWithAccessibleLots?.map(lot => lot.product_id) || [])];
+        console.log('📦 Products with lots in accessible locations:', accessibleProductIds);
+
+        if (accessibleProductIds.length === 0) {
+          console.log('📭 No products found with lots in accessible locations');
+          setProducts([]);
+          return;
+        }
+
+        // Query products that have lots in accessible locations
+        const query = supabase
+          .from('products')
+          .select(`
+            id,
+            name,
+            product_code,
+            current_stock,
+            total_stock,
+            location_id,
+            category_id,
+            locations(name),
+            categories(name)
+          `)
+          .in('id', accessibleProductIds)
+          .gt('total_stock', 0);
+
+        const { data, error } = await query.order('name');
+
+        if (error) {
+          console.error('❌ Error fetching products:', error);
+          return;
+        }
+
+        console.log('✅ Fetched products with accessible lots:', data?.length || 0);
+        const transformedProducts = data?.map(product => ({
+          id: product.id.toString(),
+          name: product.name,
+          product_code: product.product_code,
+          current_stock: product.current_stock,
+          total_stock: product.total_stock,
+          location_id: product.location_id,
+          location_name: product.locations?.name || 'Unknown Location',
+          category_id: product.category_id,
+          category_name: product.categories?.name || 'Uncategorized',
+        })) || [];
+
+        setProducts(transformedProducts);
+        return;
+      }
+
+      // For super admin users, show all products
       let query = supabase
         .from('products')
         .select(`
@@ -185,14 +255,6 @@ const TransferPage = React.memo(function TransferPage() {
         `)
         .gt('total_stock', 0);
 
-      // Apply location filtering for non-super admin users
-      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
-        console.log('🔒 Applying location filter for role:', user?.role);
-        console.log('📍 Filtering by accessible locations:', accessibleLocations);
-        const locationIds = accessibleLocations.map(id => parseInt(id));
-        query = query.in('location_id', locationIds);
-      }
-
       const { data, error } = await query.order('name');
 
       if (error) {
@@ -204,7 +266,7 @@ const TransferPage = React.memo(function TransferPage() {
       console.log('📦 First few products:', data?.slice(0, 3));
 
       const formattedProducts = data?.map(product => ({
-        id: product.id,
+        id: product.id.toString(),
         name: product.name,
         product_code: product.product_code,
         current_stock: product.current_stock,

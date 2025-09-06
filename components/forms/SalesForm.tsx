@@ -75,7 +75,7 @@ interface SalesFormProps {
 
 export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onSuccess }: SalesFormProps) {
   const { theme } = useTheme();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, getAccessibleLocations } = useAuth();
   const { showToast } = useToast();
   const { showrooms } = useLocations();
 
@@ -204,15 +204,28 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onS
 
   const loadData = async () => {
     try {
-      // Apply location filtering for sales managers
+      // Apply location filtering for non-super admin users
       let productFilters = {};
-      if (user?.role === 'sales_manager' && user.assigned_location_id) {
-        productFilters = { location: user.assigned_location_id.toString() };
+
+      // Get accessible locations for current user
+      const accessibleLocations = getAccessibleLocations();
+      console.log('📍 SalesForm - Accessible locations for user:', accessibleLocations);
+
+      if (user?.role !== 'super_admin' && accessibleLocations.length > 0) {
+        if (user?.role === 'sales_manager') {
+          // Sales managers can only see products from their assigned location
+          productFilters = { location: accessibleLocations[0] }; // Sales manager has only one location
+        } else if (user?.role === 'admin') {
+          // Admins can see products from their accessible locations
+          productFilters = { location: accessibleLocations };
+        }
       }
+
+      console.log('🔍 SalesForm - Product filters:', productFilters);
 
       // Load real data from database
       const [productsData, customersData] = await Promise.all([
-        FormService.getProducts(productFilters),
+        FormService.getProducts(productFilters, user?.id),
         FormService.getCustomers()
       ]);
 

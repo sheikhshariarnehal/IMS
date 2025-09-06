@@ -463,37 +463,44 @@ interface StepIndicatorProps {
   currentStep: number;
   steps: FormStep[];
   theme: any;
+  isEditMode?: boolean;
 }
 
-const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, steps, theme }) => (
-  <View style={[styles.stepIndicator, { backgroundColor: theme.colors.backgroundSecondary }]}>
-    {steps.map((step: FormStep, index: number) => (
-      <View key={index} style={styles.stepItem}>
-        <View style={[
-          styles.stepCircle,
-          { backgroundColor: index <= currentStep ? theme.colors.primary : theme.colors.border }
-        ]}>
-          <step.icon
-            size={16}
-            color={index <= currentStep ? '#FFFFFF' : theme.colors.text.muted}
-          />
-        </View>
-        <Text style={[
-          styles.stepText,
-          { color: index <= currentStep ? theme.colors.primary : theme.colors.text.muted }
-        ]}>
-          {step.title}
-        </Text>
-        {index < steps.length - 1 && (
+const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, steps, theme, isEditMode = false }) => {
+  // Filter out the first step (Product Type) in edit mode
+  const displaySteps = isEditMode ? steps.slice(1) : steps;
+  const adjustedCurrentStep = isEditMode ? currentStep - 1 : currentStep;
+
+  return (
+    <View style={[styles.stepIndicator, { backgroundColor: theme.colors.backgroundSecondary }]}>
+      {displaySteps.map((step: FormStep, index: number) => (
+        <View key={index} style={styles.stepItem}>
           <View style={[
-            styles.stepLine,
-            { backgroundColor: index < currentStep ? theme.colors.primary : theme.colors.border }
-          ]} />
-        )}
-      </View>
-    ))}
-  </View>
-);
+            styles.stepCircle,
+            { backgroundColor: index <= adjustedCurrentStep ? theme.colors.primary : theme.colors.border }
+          ]}>
+            <step.icon
+              size={16}
+              color={index <= adjustedCurrentStep ? '#FFFFFF' : theme.colors.text.muted}
+            />
+          </View>
+          <Text style={[
+            styles.stepText,
+            { color: index <= adjustedCurrentStep ? theme.colors.primary : theme.colors.text.muted }
+          ]}>
+            {step.title}
+          </Text>
+          {index < displaySteps.length - 1 && (
+            <View style={[
+              styles.stepLine,
+              { backgroundColor: index < adjustedCurrentStep ? theme.colors.primary : theme.colors.border }
+            ]} />
+          )}
+        </View>
+      ))}
+    </View>
+  );
+};
 
 interface PriceCalculatorProps {
   formData: ProductFormData;
@@ -878,15 +885,47 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
   // Reset form when opening
   React.useEffect(() => {
     if (visible) {
+      console.log('🔄 ProductAddForm opening, existingProduct:', existingProduct);
+
       if (existingProduct) {
-        setFormData({
-          ...existingProduct,
+        console.log('📝 Edit mode - populating form with existing product data');
+        console.log('Product data:', {
+          name: existingProduct.name,
+          product_code: existingProduct.product_code,
+          category_id: existingProduct.category_id,
+          supplier_id: existingProduct.supplier_id,
+          location_id: existingProduct.location_id,
+          purchase_price: existingProduct.purchase_price,
+          selling_price: existingProduct.selling_price,
+          current_stock: existingProduct.current_stock,
+        });
+
+        // Edit mode - populate form with existing product data (now using original database data)
+        const populatedData = {
+          name: existingProduct.name || '',
+          product_code: existingProduct.product_code || '',
           category_id: existingProduct.category_id?.toString() || '',
+          description: existingProduct.description || '',
+          purchase_price: existingProduct.purchase_price?.toString() || '',
+          selling_price: existingProduct.selling_price?.toString() || '',
+          current_stock: existingProduct.current_stock?.toString() || '0',
+          unit_of_measurement: existingProduct.unit_of_measurement || 'meter',
+          per_unit_price: existingProduct.per_unit_price?.toString() || '',
           supplier_id: existingProduct.supplier_id?.toString() || '',
           location_id: existingProduct.location_id?.toString() || '',
+          minimum_threshold: existingProduct.minimum_threshold?.toString() || '100',
           lot_number: existingProduct.lot_number || '0',
-        });
+          product_status: existingProduct.product_status || 'active',
+          wastage_status: existingProduct.wastage_status || false,
+        };
+
+        console.log('📝 Setting form data:', populatedData);
+        setFormData(populatedData);
+        setCurrentStep(1); // Skip product type selection for edit mode
+        setProductType('new'); // Set to new to avoid existing product selection logic
       } else {
+        console.log('➕ Create mode - resetting form');
+        // Create mode - reset form
         setFormData({
           name: '',
           product_code: '',
@@ -904,9 +943,9 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
           product_status: 'active',
           wastage_status: false,
         });
+        setCurrentStep(0); // Start from product type selection for create mode
+        setProductType('new');
       }
-      setCurrentStep(0);
-      setProductType('new');
       setSelectedExistingProduct(null);
       setProductImages([]);
       setErrors({});
@@ -981,7 +1020,10 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
 
       let result;
 
-      if (productType === 'existing' && selectedExistingProduct) {
+      if (existingProduct) {
+        // Edit existing product
+        result = await FormService.updateProduct(existingProduct.id, productData, user.id);
+      } else if (productType === 'existing' && selectedExistingProduct) {
         // Add stock to existing product (create new lot)
         result = await FormService.addStockToExistingProduct(selectedExistingProduct.id, productData, user.id);
       } else {
@@ -990,8 +1032,16 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
       }
 
       if (result.success && result.data) {
-        const actionText = productType === 'existing' ? 'restocked' : 'created';
-        const productName = productType === 'existing' ? selectedExistingProduct?.name : result.data.name;
+        let actionText = 'created';
+        let productName = result.data.name;
+
+        if (existingProduct) {
+          actionText = 'updated';
+          productName = existingProduct.name;
+        } else if (productType === 'existing') {
+          actionText = 'restocked';
+          productName = selectedExistingProduct?.name || result.data.name;
+        }
 
         // Show success toast
         showToast(`Product "${productName}" has been ${actionText} successfully!`, 'success');
@@ -1035,8 +1085,8 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 20 }}
       >
-        {/* Product Type Selection - Step 0 */}
-        {currentStep === 0 && (
+        {/* Product Type Selection - Step 0 (only for create mode) */}
+        {currentStep === 0 && !existingProduct && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
               <Package size={18} color={theme.colors.primary} /> Choose Product Type
@@ -1493,7 +1543,7 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
                 </View>
 
                 {/* Step Indicator */}
-                <StepIndicator currentStep={currentStep} steps={formSteps} theme={theme} />
+                <StepIndicator currentStep={currentStep} steps={formSteps} theme={theme} isEditMode={!!existingProduct} />
 
                 {/* Content */}
                 {renderStepContent()}
@@ -1503,7 +1553,7 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
                   backgroundColor: theme.colors.backgroundSecondary,
                   borderTopColor: theme.colors.border
                 }]}>
-                  {currentStep > 0 ? (
+                  {(currentStep > 0 && !existingProduct) || (currentStep > 1 && existingProduct) ? (
                     <TouchableOpacity
                       style={[styles.button, styles.backButton, {
                         backgroundColor: theme.colors.backgroundTertiary,
@@ -1533,8 +1583,8 @@ export default function ProductAddForm({ visible, onClose, onSubmit, existingPro
                     <TouchableOpacity
                       style={[styles.button, styles.nextButton, { backgroundColor: theme.colors.primary }]}
                       onPress={() => {
-                        // Validate step 0 (product type selection)
-                        if (currentStep === 0) {
+                        // Validate step 0 (product type selection) - only for create mode
+                        if (currentStep === 0 && !existingProduct) {
                           if (productType === 'existing' && !selectedExistingProduct) {
                             showToast('Please select an existing product to continue.', 'warning');
                             return;
@@ -1571,25 +1621,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-start',
-    paddingTop: 50,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, // Account for status bar
   },
   container: {
     flex: 1,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    marginHorizontal: 8,
+    marginHorizontal: Platform.OS === 'web' ? 8 : 0, // Full width on mobile
     elevation: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
+    maxHeight: '95%', // Prevent form from taking full screen height
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16, // Reduced padding for mobile
+    paddingVertical: 14,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1597,10 +1648,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: Platform.OS === 'web' ? 22 : 18, // Smaller font on mobile
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+    flex: 1, // Allow title to take available space
   },
   closeButton: {
     padding: 8,
@@ -1611,8 +1663,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingHorizontal: 12, // Reduced padding for mobile
+    paddingVertical: 16,
   },
   stepItem: {
     flex: 1,
@@ -1620,15 +1672,15 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   stepCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: Platform.OS === 'web' ? 40 : 32, // Smaller on mobile
+    height: Platform.OS === 'web' ? 40 : 32,
+    borderRadius: Platform.OS === 'web' ? 20 : 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   stepText: {
-    fontSize: 12,
+    fontSize: Platform.OS === 'web' ? 12 : 10, // Smaller text on mobile
     textAlign: 'center',
     fontWeight: '500',
   },
@@ -1642,16 +1694,16 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 20, // Add padding to prevent content from being hidden behind footer
+    paddingHorizontal: 16, // Reduced padding for mobile
+    paddingBottom: 20,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 20, // Reduced margin for mobile
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 16, // Smaller on mobile
     fontWeight: '700',
-    marginBottom: 16,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     letterSpacing: 0.3,
@@ -1741,12 +1793,12 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16, // Reduced margin for mobile
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6, // Reduced margin for mobile
     letterSpacing: 0.2,
   },
   requiredLabel: {
@@ -1754,11 +1806,12 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 2,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    borderRadius: 10, // Slightly smaller radius for mobile
+    paddingHorizontal: 14, // Reduced padding for mobile
+    paddingVertical: Platform.OS === 'web' ? 14 : 12,
+    fontSize: Platform.OS === 'web' ? 16 : 15, // Slightly smaller on mobile
     fontWeight: '500',
+    minHeight: 44, // Ensure minimum touch target size
   },
   inputError: {
     borderColor: '#EF4444',
@@ -1929,20 +1982,22 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    gap: 16,
-    padding: 20,
+    gap: 12, // Reduced gap for mobile
+    padding: 16, // Reduced padding for mobile
     borderTopWidth: 2,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16, // Account for home indicator on iOS
   },
   button: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: Platform.OS === 'web' ? 16 : 14, // Slightly smaller on mobile
+    borderRadius: 10, // Smaller radius for mobile
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    minHeight: 48, // Ensure minimum touch target size
   },
   backButton: {
     borderWidth: 2,
@@ -1976,15 +2031,15 @@ const styles = StyleSheet.create({
   productTypeOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    padding: Platform.OS === 'web' ? 16 : 12, // Reduced padding on mobile
+    borderRadius: 10,
     borderWidth: 2,
-    gap: 12,
+    gap: 10, // Reduced gap on mobile
   },
   productTypeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: Platform.OS === 'web' ? 48 : 40, // Smaller on mobile
+    height: Platform.OS === 'web' ? 48 : 40,
+    borderRadius: Platform.OS === 'web' ? 12 : 10,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -255,7 +255,21 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
   };
 
   const handleLotSelection = (lot: any) => {
-    setFormData(prev => ({ ...prev, selectedLot: lot }));
+    console.log('🔄 Lot selected:', lot);
+
+    // Update form data with selected lot and its location as source location
+    setFormData(prev => ({
+      ...prev,
+      selectedLot: lot,
+      sourceLocationId: lot.location_id?.toString() || prev.sourceLocationId,
+      sourceLocationName: lot.locations?.name || prev.sourceLocationName,
+    }));
+
+    console.log('✅ Updated source location to:', {
+      locationId: lot.location_id,
+      locationName: lot.locations?.name
+    });
+
     setShowLotSelection(false);
   };
 
@@ -321,10 +335,22 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
 
     // Check location-specific permissions for admin users
     if (user.role === 'admin') {
+      console.log('🔒 Checking transfer permission for admin:', {
+        sourceLocationId: formData.sourceLocationId,
+        sourceLocationName: formData.sourceLocationName,
+        selectedLot: formData.selectedLot?.lot_number,
+        selectedLotLocation: formData.selectedLot?.location_id
+      });
+
       if (!canTransferFromLocation(formData.sourceLocationId)) {
-        Alert.alert('Permission Denied', 'You do not have permission to transfer products from this location. Admins can only transfer from warehouses they have access to.');
+        Alert.alert(
+          'Permission Denied',
+          `You do not have permission to transfer products from "${formData.sourceLocationName}". Admins can only transfer from locations they have access to.`
+        );
         return;
       }
+
+      console.log('✅ Transfer permission granted for location:', formData.sourceLocationName);
     }
 
     setLoading(true);

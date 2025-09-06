@@ -270,14 +270,38 @@ export class FormService {
       }
       if (filters?.location) {
         // Handle both single location and multiple locations
+        let locationIds: number[];
         if (Array.isArray(filters.location)) {
-          const locationIds = filters.location.map(id => parseInt(id));
-          query = query.in('location_id', locationIds);
+          locationIds = filters.location.map(id => parseInt(id));
           console.log('🔍 Filtering products by multiple locations:', locationIds);
         } else {
-          query = query.eq('location_id', parseInt(filters.location));
+          locationIds = [parseInt(filters.location)];
           console.log('🔍 Filtering products by single location:', filters.location);
         }
+
+        // Query products that have lots in the specified locations
+        // This ensures we show products that have any lots in the specified locations
+        const { data: productsWithLotsInLocations, error: lotError } = await supabase
+          .from('products_lot')
+          .select('product_id')
+          .in('location_id', locationIds)
+          .gt('quantity', 0); // Only lots with available quantity
+
+        if (lotError) {
+          console.error('❌ Error fetching products with lots in specified locations:', lotError);
+          return [];
+        }
+
+        const productIdsWithAccessibleLots = [...new Set(productsWithLotsInLocations?.map(lot => lot.product_id) || [])];
+        console.log('📦 Products with lots in specified locations:', productIdsWithAccessibleLots);
+
+        if (productIdsWithAccessibleLots.length === 0) {
+          console.log('📭 No products found with lots in specified locations');
+          return [];
+        }
+
+        // Filter products to only those that have lots in the specified locations
+        query = query.in('id', productIdsWithAccessibleLots);
       }
 
       query = query.order('created_at', { ascending: false });
@@ -655,6 +679,65 @@ export class FormService {
     } catch (error) {
       console.error('Error fetching existing products:', error);
       return [];
+    }
+  }
+
+  // Update existing product
+  static async updateProduct(
+    productId: number,
+    data: ProductFormData,
+    userId: number
+  ): Promise<{ success: boolean; data?: Product; error?: string }> {
+    try {
+      console.log('🔄 Starting product update for product ID:', productId);
+      console.log('🔄 Update data:', data);
+
+      await this.ensureUserContext(userId);
+
+      // Prepare the update data
+      const updateData = {
+        name: data.name,
+        product_code: data.product_code,
+        category_id: data.category_id || null,
+        description: data.description || null,
+        purchase_price: data.purchase_price || null,
+        selling_price: data.selling_price || null,
+        per_meter_price: data.per_meter_price || null,
+        supplier_id: data.supplier_id || null,
+        location_id: data.location_id || null,
+        minimum_threshold: data.minimum_threshold || 100,
+        current_stock: data.current_stock || 0,
+        wastage_status: data.wastage_status || false,
+        product_status: data.product_status || 'active',
+        unit_of_measurement: data.unit_of_measurement || 'meter',
+        images: data.images || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log('🔄 Updating product with data:', updateData);
+
+      const { data: product, error } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error updating product:', error);
+        return { success: false, error: `Database error: ${error.message}` };
+      }
+
+      // Log activity
+      if (!isDemoMode) {
+        await activityLogger.logUpdate('PRODUCTS', product.name, productId, {}, updateData);
+      }
+
+      console.log('✅ Product updated successfully:', product);
+      return { success: true, data: product };
+    } catch (error) {
+      console.error('Error updating product:', error);
+      return { success: false, error: 'Failed to update product' };
     }
   }
 

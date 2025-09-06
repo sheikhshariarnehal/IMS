@@ -30,6 +30,11 @@ interface ProductLot {
   status?: string;
   notes?: string;
   per_unit_price?: number;
+  locations?: {
+    id: number;
+    name: string;
+    type: string;
+  };
 }
 
 interface LotSelectionModalProps {
@@ -63,7 +68,10 @@ export default function LotSelectionModal({
     try {
       const { data, error } = await supabase
         .from('products_lot')
-        .select('*')
+        .select(`
+          *,
+          locations(id, name, type)
+        `)
         .eq('product_id', productId)
         .eq('status', 'active')
         .gt('quantity', 0)
@@ -75,6 +83,7 @@ export default function LotSelectionModal({
         return;
       }
 
+      console.log('📦 Fetched lots with location info:', data);
       setLots(data || []);
     } catch (error) {
       console.error('Error fetching lots:', error);
@@ -127,6 +136,13 @@ export default function LotSelectionModal({
           <Package size={14} color={theme.colors.text.secondary} />
           <Text style={styles.lotDetailText}>
             Price: ${item.selling_price?.toFixed(2) || 'N/A'}
+          </Text>
+        </View>
+
+        <View style={styles.lotDetailRow}>
+          <MapPin size={14} color={theme.colors.text.secondary} />
+          <Text style={styles.lotDetailText}>
+            Location: {item.locations?.name || 'Unknown Location'}
           </Text>
         </View>
 

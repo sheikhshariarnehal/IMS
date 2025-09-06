@@ -56,6 +56,7 @@ interface Product {
   onHand: number;
   minimumThreshold: number;
   image?: string;
+  _originalData?: any; // Store original database data for editing
 }
 
 interface ProductFilters {
@@ -192,6 +193,8 @@ const ProductsPage = React.memo(function ProductsPage() {
           onHand: parsePrice(product.current_stock),
           minimumThreshold: product.minimum_threshold || 0,
           image: product.image_url || null,
+          // Store original database fields for editing
+          _originalData: product,
         };
       });
 
@@ -353,7 +356,16 @@ const ProductsPage = React.memo(function ProductsPage() {
           Alert.alert('Permission Denied', 'You do not have permission to edit products.');
           return;
         }
-        setEditingProduct(product);
+
+        // Use the original database data for editing
+        const originalData = (product as any)._originalData;
+        if (!originalData) {
+          Alert.alert('Error', 'Product data not available for editing.');
+          return;
+        }
+
+        console.log('🔄 Setting editing product with original data:', originalData);
+        setEditingProduct(originalData);
         setShowEditForm(true);
         break;
       case 'delete':
@@ -851,19 +863,29 @@ const ProductsPage = React.memo(function ProductsPage() {
       return;
     }
 
+    if (!editingProduct?.id) {
+      Alert.alert('Error', 'No product selected for editing.');
+      return;
+    }
+
     try {
-      console.log('Mock product update for demo...');
+      console.log('Updating product via FormService...');
       console.log('User ID:', user?.id);
       console.log('Product ID:', editingProduct?.id);
 
-      // Mock product update for demo
-      const result = { ...editingProduct, ...data, updated_at: new Date().toISOString() };
-      console.log('✅ Product updated successfully:', result);
+      // Use the real FormService.updateProduct method
+      const result = await FormService.updateProduct(editingProduct.id, data, user.id);
 
-      Alert.alert('Success', `Product "${editingProduct?.name}" updated successfully!`);
-      setShowEditForm(false);
-      setEditingProduct(null);
-      loadProducts(); // Refresh the list
+      if (result.success && result.data) {
+        console.log('✅ Product updated successfully:', result.data);
+        Alert.alert('Success', `Product "${editingProduct?.name}" updated successfully!`);
+        setShowEditForm(false);
+        setEditingProduct(null);
+        loadProducts(); // Refresh the list
+      } else {
+        console.error('❌ Product update failed:', result.error);
+        Alert.alert('Error', `Failed to update product: ${result.error}`);
+      }
     } catch (error) {
       console.error('=== ERROR IN PRODUCT EDIT ===');
       console.error('Error updating product:', error);
