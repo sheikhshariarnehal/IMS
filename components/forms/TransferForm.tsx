@@ -76,7 +76,7 @@ interface TransferFormProps {
 
 export default function TransferForm({ visible, onClose, onSubmit, product }: TransferFormProps) {
   const { theme } = useTheme();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, getAccessibleLocations } = useAuth();
   const slideAnim = useRef(new Animated.Value(-screenHeight)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -1692,6 +1692,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
         onSelectLot={handleLotSelection}
         productId={parseInt(product?.id || '0')}
         productName={product?.name || ''}
+        accessibleLocations={getAccessibleLocations()}
       />
     </Modal>
   );

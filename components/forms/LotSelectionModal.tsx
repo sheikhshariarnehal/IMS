@@ -43,6 +43,7 @@ interface LotSelectionModalProps {
   onSelectLot: (lot: ProductLot) => void;
   productId: number;
   productName: string;
+  accessibleLocations?: string[]; // User's accessible location IDs
 }
 
 export default function LotSelectionModal({
@@ -51,6 +52,7 @@ export default function LotSelectionModal({
   onSelectLot,
   productId,
   productName,
+  accessibleLocations,
 }: LotSelectionModalProps) {
   const { theme } = useTheme();
   const [lots, setLots] = useState<ProductLot[]>([]);
@@ -66,7 +68,7 @@ export default function LotSelectionModal({
   const fetchProductLots = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('products_lot')
         .select(`
           *,
@@ -74,8 +76,16 @@ export default function LotSelectionModal({
         `)
         .eq('product_id', productId)
         .eq('status', 'active')
-        .gt('quantity', 0)
-        .order('lot_number', { ascending: true });
+        .gt('quantity', 0);
+
+      // Apply location filtering if accessible locations are provided
+      if (accessibleLocations && accessibleLocations.length > 0) {
+        const locationIds = accessibleLocations.map(id => parseInt(id));
+        query = query.in('location_id', locationIds);
+        console.log('🔒 Filtering lots by accessible locations:', locationIds);
+      }
+
+      const { data, error } = await query.order('lot_number', { ascending: true });
 
       if (error) {
         console.error('Error fetching lots:', error);
@@ -83,7 +93,16 @@ export default function LotSelectionModal({
         return;
       }
 
-      console.log('📦 Fetched lots with location info:', data);
+      console.log('📦 Fetched lots with location filtering:', {
+        totalLots: data?.length || 0,
+        accessibleLocations,
+        lots: data?.map(lot => ({
+          lotNumber: lot.lot_number,
+          locationId: lot.location_id,
+          locationName: lot.locations?.name
+        }))
+      });
+
       setLots(data || []);
     } catch (error) {
       console.error('Error fetching lots:', error);

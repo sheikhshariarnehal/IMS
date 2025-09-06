@@ -485,7 +485,7 @@ export class FormService {
     return filteredProducts;
   }
 
-  static async getProductLots(productId: number): Promise<any[]> {
+  static async getProductLots(productId: number, accessibleLocations?: string[]): Promise<any[]> {
     try {
       console.log('🔍 getProductLots called for productId:', productId, 'type:', typeof productId);
       console.log('🔍 isDemoMode:', isDemoMode);
@@ -530,11 +530,21 @@ export class FormService {
       await this.ensureUserContext();
 
       console.log('🔄 Querying products_lot table for numericProductId:', numericProductId);
-      const { data, error } = await supabase
+      console.log('🔒 Accessible locations for lot filtering:', accessibleLocations);
+
+      let query = supabase
         .from('products_lot')
         .select('*')
-        .eq('product_id', numericProductId)
-        .order('lot_number', { ascending: true }); // FIFO order
+        .eq('product_id', numericProductId);
+
+      // Apply location filtering if accessible locations are provided
+      if (accessibleLocations && accessibleLocations.length > 0) {
+        const locationIds = accessibleLocations.map(id => parseInt(id));
+        query = query.in('location_id', locationIds);
+        console.log('🔒 Filtering lots by accessible locations:', locationIds);
+      }
+
+      const { data, error } = await query.order('lot_number', { ascending: true }); // FIFO order
 
       if (error) {
         console.error('❌ Error fetching product lots:', error);

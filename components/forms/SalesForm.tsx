@@ -450,7 +450,12 @@ export default function SalesForm({ visible, onClose, onSubmit, onSaveDraft, onS
     // Load lots for the selected product
     try {
       console.log('🔍 SalesForm: Loading lots for product:', product.name, 'ID:', product.id);
-      const response = await FormService.getProductLots(product.id);
+
+      // Get accessible locations for filtering lots
+      const accessibleLocations = getAccessibleLocations();
+      console.log('🔒 SalesForm: Filtering lots by accessible locations:', accessibleLocations);
+
+      const response = await FormService.getProductLots(product.id, accessibleLocations);
       console.log('🔍 SalesForm: Received response:', response);
 
       // Handle the response structure { success, data, error }
