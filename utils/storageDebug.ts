@@ -94,24 +94,46 @@ export async function debugStorage(): Promise<StorageDebugInfo> {
  */
 export async function logStorageDebugInfo(): Promise<void> {
   console.log('🔧 === STORAGE DEBUG INFO ===');
-  
+
   const debugInfo = await debugStorage();
-  
+
   console.log('📱 Platform:', isWeb ? 'Web' : 'Mobile');
   console.log('💾 Storage Type:', debugInfo.storageType);
   console.log('✅ Has Storage Access:', debugInfo.hasStorageAccess);
   console.log('📝 Can Write:', debugInfo.canWrite);
   console.log('📖 Can Read:', debugInfo.canRead);
   console.log('👤 Session Exists:', debugInfo.sessionExists);
-  
+
   if (debugInfo.sessionData) {
     console.log('📊 Session Info:', debugInfo.sessionData);
   }
-  
+
   if (debugInfo.error) {
     console.error('❌ Error:', debugInfo.error);
   }
-  
+
+  // Additional mobile-specific test
+  if (!isWeb) {
+    console.log('📱 Running mobile-specific storage test...');
+    try {
+      const testKey = 'mobile_storage_test';
+      const testValue = 'mobile_test_value_' + Date.now();
+
+      await storage.setItem(testKey, testValue);
+      const retrieved = await storage.getItem(testKey);
+
+      if (retrieved === testValue) {
+        console.log('✅ Mobile storage test passed');
+      } else {
+        console.error('❌ Mobile storage test failed - value mismatch');
+      }
+
+      await storage.removeItem(testKey);
+    } catch (error) {
+      console.error('❌ Mobile storage test error:', error);
+    }
+  }
+
   console.log('🔧 === END DEBUG INFO ===');
 }
 

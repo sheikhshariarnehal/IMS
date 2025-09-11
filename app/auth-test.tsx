@@ -11,10 +11,11 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import SessionStatus from '@/components/SessionStatus';
 
 export default function AuthTestPage() {
   const { theme } = useTheme();
-  const { user, login, logout, debugStorage, testPersistence } = useAuth();
+  const { user, login, logout, debugStorage, testPersistence, checkCurrentSession, testMobileStorageFunction } = useAuth();
   const router = useRouter();
   const [testResults, setTestResults] = useState<string[]>([]);
 
@@ -75,6 +76,34 @@ export default function AuthTestPage() {
       }
     } catch (error: any) {
       addTestResult(`❌ Persistence test error: ${error.message}`);
+    }
+  };
+
+  const handleCheckSession = async () => {
+    try {
+      addTestResult('🔄 Checking current session...');
+      if (checkCurrentSession) {
+        await checkCurrentSession();
+        addTestResult('✅ Session check completed (see console)');
+      } else {
+        addTestResult('⚠️ Check session not available');
+      }
+    } catch (error: any) {
+      addTestResult(`❌ Session check error: ${error.message}`);
+    }
+  };
+
+  const handleTestMobileStorage = async () => {
+    try {
+      addTestResult('🔄 Testing mobile storage...');
+      if (testMobileStorageFunction) {
+        const result = await testMobileStorageFunction();
+        addTestResult(result ? '✅ Mobile storage test passed' : '❌ Mobile storage test failed');
+      } else {
+        addTestResult('⚠️ Mobile storage test not available');
+      }
+    } catch (error: any) {
+      addTestResult(`❌ Mobile storage test error: ${error.message}`);
     }
   };
 
@@ -171,6 +200,8 @@ export default function AuthTestPage() {
       </View>
 
       <ScrollView style={styles.content}>
+        <SessionStatus />
+
         {/* User Status */}
         <View style={styles.userInfo}>
           <Text style={styles.userText}>
@@ -206,8 +237,8 @@ export default function AuthTestPage() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.button, styles.secondaryButton]} 
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
             onPress={handleTestPersistence}
           >
             <Text style={[styles.buttonText, styles.secondaryButtonText]}>
@@ -215,8 +246,26 @@ export default function AuthTestPage() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.button, styles.backButton]} 
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={handleCheckSession}
+          >
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Check Session
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={handleTestMobileStorage}
+          >
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Test Mobile Storage
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.backButton]}
             onPress={() => router.back()}
           >
             <Text style={styles.buttonText}>Back to App</Text>

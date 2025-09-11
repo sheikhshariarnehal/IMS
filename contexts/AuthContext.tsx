@@ -4,12 +4,13 @@ import SafeStorage from '../utils/safeStorage';
 import { supabase, setUserContext, clearUserContext, testAuth, User } from '../lib/supabase';
 import { useLocations } from './LocationContext';
 import { logStorageDebugInfo } from '../utils/storageDebug';
+import { testMobileStorage, testSessionPersistence } from '../utils/mobileStorageTest';
 
 // Check if we're in demo mode or web environment
 const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 const isWeb = typeof window !== 'undefined';
 
-// Use safe storage for web environment to handle localStorage issues
+// Always use AsyncStorage for mobile, SafeStorage only for web
 const storage = isWeb ? SafeStorage : AsyncStorage;
 
 // User permissions interface
@@ -112,6 +113,8 @@ interface AuthContextType {
   // Debug functions (only available in development)
   debugStorage?: () => Promise<void>;
   testPersistence?: () => Promise<boolean>;
+  checkCurrentSession?: () => Promise<void>;
+  testMobileStorageFunction?: () => Promise<boolean>;
 }
 
 // Create context
@@ -163,22 +166,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load user session on app start
   useEffect(() => {
-    // Add storage debugging in development
-    if (__DEV__) {
-      logStorageDebugInfo();
-    }
-    loadUserSession();
+    const initializeAuth = async () => {
+      console.log('🚀 Initializing authentication...');
+
+      // Add storage debugging in development
+      if (__DEV__) {
+        await logStorageDebugInfo();
+
+        // Run mobile-specific storage tests
+        if (!isWeb) {
+          console.log('📱 Running mobile storage tests...');
+          const mobileTestResult = await testMobileStorage();
+          if (!mobileTestResult.success) {
+            console.error('❌ Mobile storage tests failed:', mobileTestResult);
+          }
+
+          const sessionTestResult = await testSessionPersistence();
+          if (!sessionTestResult) {
+            console.error('❌ Session persistence test failed');
+          }
+        }
+      }
+
+      // Load user session
+      await loadUserSession();
+      console.log('✅ Authentication initialization completed');
+    };
+
+    initializeAuth();
   }, []);
 
   const loadUserSession = async () => {
     console.log('🔄 Starting session restoration...');
 
     try {
-      // Add a small delay to ensure storage is ready
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Ensure storage is ready with longer delay for mobile
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       console.log('📱 Attempting to retrieve stored session...');
-      const sessionData = await storage.getItem('userSession');
+      console.log('📱 Using storage type:', isWeb ? 'SafeStorage (Web)' : 'AsyncStorage (Mobile)');
+
+      // Use AsyncStorage directly for mobile to ensure compatibility
+      const sessionData = !isWeb
+        ? await AsyncStorage.getItem('userSession')
+        : await storage.getItem('userSession');
+      console.log('📦 Raw session data retrieved:', sessionData ? 'Found' : 'Not found');
+
+      // Additional verification for mobile
+      if (!isWeb && sessionData) {
+        console.log('📱 Mobile session data length:', sessionData.length);
+        console.log('📱 Mobile session data preview:', sessionData.substring(0, 100) + '...');
+      }
 
       if (!sessionData) {
         console.log('📭 No stored session found');
@@ -192,8 +230,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         userSession = JSON.parse(sessionData);
         console.log('✅ Session data parsed successfully for user:', userSession.email);
+        console.log('📊 Session details:', {
+          email: userSession.email,
+          role: userSession.role,
+          loginTime: userSession.loginTime,
+          hasPermissions: !!userSession.permissions
+        });
       } catch (parseError) {
         console.error('❌ Failed to parse session data:', parseError);
+        console.error('❌ Raw session data that failed to parse:', sessionData);
         await storage.removeItem('userSession');
         setUser(null);
         return;
@@ -212,79 +257,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log('⏰ Session is still valid (age:', Math.round(sessionAge / (1000 * 60)), 'minutes)');
 
-      // Try to restore session immediately, then validate in background
+      // For mobile apps, restore session immediately for better UX
       console.log('🚀 Restoring user session immediately...');
       setUser(userSession);
+      console.log('✅ User state updated with session data');
 
-      // Set user context for RLS
-      try {
-        await setUserContext(userSession.id);
+      // Set user context for RLS (non-blocking)
+      setUserContext(userSession.id).then(() => {
         console.log('✅ User context set for RLS');
-      } catch (contextError) {
+      }).catch((contextError) => {
         console.error('⚠️ Failed to set user context:', contextError);
-      }
+        // Don't fail the session restoration for RLS errors
+      });
 
-      // Validate session in background (don't block user experience)
-      console.log('🔄 Validating session in background...');
+      // For mobile apps, skip network validation on startup to improve performance
+      // Session validation will happen when user performs actions that require it
+      if (!isWeb) {
+        console.log('📱 Mobile app: Skipping network validation on startup for better performance');
+        console.log('✅ Session restored successfully for mobile app');
+      } else {
+        // For web apps, validate session in background
+        console.log('🔄 Web app: Validating session in background...');
 
-      // Use a timeout to prevent hanging on network issues
-      const validationPromise = Promise.race([
-        testAuth(userSession.email),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Validation timeout')), 10000)
-        )
-      ]);
+        // Use a timeout to prevent hanging on network issues
+        const validationPromise = Promise.race([
+          testAuth(userSession.email),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Validation timeout')), 10000)
+          )
+        ]);
 
-      try {
-        const validationResult = await validationPromise as any;
+        try {
+          const validationResult = await validationPromise as any;
 
-        if (validationResult.error || !validationResult.data) {
-          console.log('❌ Background session validation failed - user not found or inactive');
-          // Only clear session if validation definitively fails (not on network errors)
-          if (validationResult.error && !validationResult.error.message?.includes('network')) {
+          if (validationResult.error || !validationResult.data) {
+            console.log('❌ Background session validation failed - user not found or inactive');
+            // Only clear session if validation definitively fails (not on network errors)
+            if (validationResult.error && !validationResult.error.message?.includes('network')) {
+              await storage.removeItem('userSession');
+              setUser(null);
+            }
+          } else {
+            console.log('✅ Background session validation successful');
+            // Update user data if it has changed
+            const freshUserData = validationResult.data;
+            if (JSON.stringify(userSession.permissions) !== JSON.stringify(freshUserData.permissions)) {
+              console.log('🔄 User permissions updated, refreshing session...');
+              const updatedSession = {
+                ...userSession,
+                permissions: freshUserData.permissions || {}
+              };
+              await storage.setItem('userSession', JSON.stringify(updatedSession));
+              setUser(updatedSession);
+            }
+          }
+        } catch (validationError: any) {
+          console.warn('⚠️ Session validation failed (network issue?):', validationError.message);
+          // Don't clear session on network errors - user can still use the app offline
+          if (!validationError.message?.includes('timeout') && !validationError.message?.includes('network')) {
+            console.log('❌ Non-network validation error, clearing session');
             await storage.removeItem('userSession');
             setUser(null);
           }
-        } else {
-          console.log('✅ Background session validation successful');
-          // Update user data if it has changed
-          const freshUserData = validationResult.data;
-          if (JSON.stringify(userSession.permissions) !== JSON.stringify(freshUserData.permissions)) {
-            console.log('🔄 User permissions updated, refreshing session...');
-            const updatedSession = {
-              ...userSession,
-              permissions: freshUserData.permissions || {}
-            };
-            await storage.setItem('userSession', JSON.stringify(updatedSession));
-            setUser(updatedSession);
-          }
-        }
-      } catch (validationError: any) {
-        console.warn('⚠️ Session validation failed (network issue?):', validationError.message);
-        // Don't clear session on network errors - user can still use the app offline
-        if (!validationError.message?.includes('timeout') && !validationError.message?.includes('network')) {
-          console.log('❌ Non-network validation error, clearing session');
-          await storage.removeItem('userSession');
-          setUser(null);
         }
       }
 
     } catch (error) {
       console.error('❌ Critical error loading user session:', error);
+      console.error('❌ Error details:', {
+        name: (error as any)?.name,
+        message: (error as any)?.message,
+        stack: (error as any)?.stack
+      });
 
       // Only clear session if it's a parsing/storage error, not network
       if (error instanceof SyntaxError || (error as any)?.message?.includes('storage')) {
         console.log('🧹 Clearing potentially corrupted session');
         try {
           await storage.removeItem('userSession');
+          console.log('✅ Corrupted session cleared');
         } catch (clearError) {
           console.error('❌ Failed to clear corrupted session:', clearError);
         }
+      } else {
+        console.log('⚠️ Non-storage error, keeping session data for retry');
       }
 
       setUser(null);
     } finally {
       console.log('✅ Session restoration process completed');
+      console.log('📊 Final auth state:', { isLoading: false, hasUser: !!user });
       setIsLoading(false);
     }
   };
@@ -776,29 +838,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log('🔍 Created user session:', userSession);
 
-      // Save session with verification
-      try {
-        console.log('💾 Saving user session to storage...');
-        await storage.setItem('userSession', JSON.stringify(userSession));
+      // Save session with multiple verification attempts
+      let sessionSaved = false;
+      let saveAttempts = 0;
+      const maxSaveAttempts = 3;
 
-        // Verify the session was saved correctly
-        const savedSession = await storage.getItem('userSession');
-        if (savedSession) {
-          const parsedSession = JSON.parse(savedSession);
-          if (parsedSession.email === userSession.email) {
-            console.log('✅ Session saved and verified successfully');
+      while (!sessionSaved && saveAttempts < maxSaveAttempts) {
+        try {
+          saveAttempts++;
+          console.log(`💾 Saving user session to storage (attempt ${saveAttempts}/${maxSaveAttempts})...`);
+
+          // Use AsyncStorage directly for mobile to ensure compatibility
+          if (!isWeb) {
+            await AsyncStorage.setItem('userSession', JSON.stringify(userSession));
+            console.log('📱 Used AsyncStorage directly for mobile');
           } else {
-            console.error('❌ Session verification failed - data mismatch');
-            throw new Error('Session save verification failed');
+            await storage.setItem('userSession', JSON.stringify(userSession));
+            console.log('🌐 Used SafeStorage for web');
           }
-        } else {
-          console.error('❌ Session verification failed - no data found');
-          throw new Error('Session was not saved');
+
+          // Add a small delay to ensure write is complete
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // Verify the session was saved correctly
+          const savedSession = !isWeb
+            ? await AsyncStorage.getItem('userSession')
+            : await storage.getItem('userSession');
+
+          if (savedSession) {
+            const parsedSession = JSON.parse(savedSession);
+            if (parsedSession.email === userSession.email && parsedSession.id === userSession.id) {
+              console.log(`✅ Session saved and verified successfully on attempt ${saveAttempts}`);
+              sessionSaved = true;
+            } else {
+              console.error(`❌ Session verification failed on attempt ${saveAttempts} - data mismatch`);
+              console.error('Expected:', { email: userSession.email, id: userSession.id });
+              console.error('Got:', { email: parsedSession.email, id: parsedSession.id });
+            }
+          } else {
+            console.error(`❌ Session verification failed on attempt ${saveAttempts} - no data found`);
+          }
+        } catch (saveError) {
+          console.error(`❌ Failed to save user session on attempt ${saveAttempts}:`, saveError);
+          if (saveAttempts === maxSaveAttempts) {
+            console.warn('⚠️ Login successful but session may not persist after multiple save attempts');
+          }
         }
-      } catch (saveError) {
-        console.error('❌ Failed to save user session:', saveError);
-        // Continue with login but warn user about persistence issue
-        console.warn('⚠️ Authentication will not persist across app restarts');
+      }
+
+      if (!sessionSaved) {
+        console.error('❌ CRITICAL: Failed to save session after all attempts');
+        // Still proceed with login but warn user
       }
 
       setUser(userSession);
@@ -1215,6 +1305,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Manual session check function for debugging
+  const checkCurrentSession = useCallback(async () => {
+    if (!__DEV__) return;
+
+    try {
+      console.log('🔍 === MANUAL SESSION CHECK ===');
+      const sessionData = await storage.getItem('userSession');
+
+      if (sessionData) {
+        const session = JSON.parse(sessionData);
+        console.log('📦 Found session:', {
+          email: session.email,
+          role: session.role,
+          loginTime: session.loginTime,
+          sessionAge: Date.now() - new Date(session.loginTime).getTime(),
+          isExpired: (Date.now() - new Date(session.loginTime).getTime()) > (24 * 60 * 60 * 1000)
+        });
+      } else {
+        console.log('📭 No session found in storage');
+      }
+
+      console.log('👤 Current user state:', user ? {
+        email: user.email,
+        role: user.role,
+        isLoggedIn: true
+      } : 'Not logged in');
+
+      console.log('🔍 === END SESSION CHECK ===');
+    } catch (error) {
+      console.error('❌ Session check error:', error);
+    }
+  }, [user]);
+
+  // Mobile storage test function
+  const testMobileStorageFunction = useCallback(async (): Promise<boolean> => {
+    if (!__DEV__ || isWeb) return false;
+
+    try {
+      const result = await testMobileStorage();
+      return result.success;
+    } catch (error) {
+      console.error('❌ Mobile storage test function error:', error);
+      return false;
+    }
+  }, []);
+
   // Memoize the context value to prevent unnecessary re-renders
   const value = useMemo(() => ({
     user,
@@ -1226,8 +1362,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isRole,
     canAccessLocation,
     getAccessibleLocations,
-    ...__DEV__ && { debugStorage, testPersistence },
-  }), [user, isLoading, login, logout, refreshUserData, hasPermission, isRole, canAccessLocation, getAccessibleLocations, debugStorage, testPersistence]);
+    ...__DEV__ && { debugStorage, testPersistence, checkCurrentSession, testMobileStorageFunction },
+  }), [user, isLoading, login, logout, refreshUserData, hasPermission, isRole, canAccessLocation, getAccessibleLocations, debugStorage, testPersistence, checkCurrentSession, testMobileStorageFunction]);
 
   return (
     <AuthContext.Provider value={value}>
