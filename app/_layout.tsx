@@ -67,6 +67,7 @@ export default function RootLayout() {
                     <Stack.Screen name="support" options={{ animation: 'none' }} />
                     <Stack.Screen name="transfer" options={{ animation: 'none' }} />
                     <Stack.Screen name="categories" options={{ animation: 'none' }} />
+                    <Stack.Screen name="auth-test" options={{ animation: 'none' }} />
 
                     <Stack.Screen name="+not-found" options={{ animation: 'none' }} />
                   </Stack>

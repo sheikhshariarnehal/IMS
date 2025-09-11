@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SafeStorage from '../utils/safeStorage';
 import { supabase, setUserContext, clearUserContext, testAuth, User } from '../lib/supabase';
 import { useLocations } from './LocationContext';
+import { logStorageDebugInfo } from '../utils/storageDebug';
 
 // Check if we're in demo mode or web environment
 const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
@@ -108,6 +109,9 @@ interface AuthContextType {
   isRole: (role: string) => boolean;
   canAccessLocation: (locationId: string | number) => boolean;
   getAccessibleLocations: () => string[];
+  // Debug functions (only available in development)
+  debugStorage?: () => Promise<void>;
+  testPersistence?: () => Promise<boolean>;
 }
 
 // Create context
@@ -159,52 +163,128 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load user session on app start
   useEffect(() => {
+    // Add storage debugging in development
+    if (__DEV__) {
+      logStorageDebugInfo();
+    }
     loadUserSession();
   }, []);
 
   const loadUserSession = async () => {
+    console.log('🔄 Starting session restoration...');
+
     try {
+      // Add a small delay to ensure storage is ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log('📱 Attempting to retrieve stored session...');
       const sessionData = await storage.getItem('userSession');
-      if (sessionData) {
-        const userSession: UserSession = JSON.parse(sessionData);
 
-        // Check session expiration (24 hours)
-        const sessionAge = Date.now() - new Date(userSession.loginTime).getTime();
-        const sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      if (!sessionData) {
+        console.log('📭 No stored session found');
+        setUser(null);
+        return;
+      }
 
-        if (sessionAge > sessionTimeout) {
-          console.log('❌ Session expired - clearing stored session');
-          await storage.removeItem('userSession');
-          setUser(null);
-          return;
-        }
+      console.log('📦 Found stored session data, parsing...');
+      let userSession: UserSession;
 
-        // Validate session by checking if user still exists and is active
-        console.log('🔄 Validating stored session for:', userSession.email);
-        const validationResult = await testAuth(userSession.email);
+      try {
+        userSession = JSON.parse(sessionData);
+        console.log('✅ Session data parsed successfully for user:', userSession.email);
+      } catch (parseError) {
+        console.error('❌ Failed to parse session data:', parseError);
+        await storage.removeItem('userSession');
+        setUser(null);
+        return;
+      }
+
+      // Check session expiration (24 hours)
+      const sessionAge = Date.now() - new Date(userSession.loginTime).getTime();
+      const sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+      if (sessionAge > sessionTimeout) {
+        console.log('❌ Session expired - clearing stored session');
+        await storage.removeItem('userSession');
+        setUser(null);
+        return;
+      }
+
+      console.log('⏰ Session is still valid (age:', Math.round(sessionAge / (1000 * 60)), 'minutes)');
+
+      // Try to restore session immediately, then validate in background
+      console.log('🚀 Restoring user session immediately...');
+      setUser(userSession);
+
+      // Set user context for RLS
+      try {
+        await setUserContext(userSession.id);
+        console.log('✅ User context set for RLS');
+      } catch (contextError) {
+        console.error('⚠️ Failed to set user context:', contextError);
+      }
+
+      // Validate session in background (don't block user experience)
+      console.log('🔄 Validating session in background...');
+
+      // Use a timeout to prevent hanging on network issues
+      const validationPromise = Promise.race([
+        testAuth(userSession.email),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Validation timeout')), 10000)
+        )
+      ]);
+
+      try {
+        const validationResult = await validationPromise as any;
 
         if (validationResult.error || !validationResult.data) {
-          console.log('❌ Session validation failed - user not found or inactive');
-          // Clear invalid session
+          console.log('❌ Background session validation failed - user not found or inactive');
+          // Only clear session if validation definitively fails (not on network errors)
+          if (validationResult.error && !validationResult.error.message?.includes('network')) {
+            await storage.removeItem('userSession');
+            setUser(null);
+          }
+        } else {
+          console.log('✅ Background session validation successful');
+          // Update user data if it has changed
+          const freshUserData = validationResult.data;
+          if (JSON.stringify(userSession.permissions) !== JSON.stringify(freshUserData.permissions)) {
+            console.log('🔄 User permissions updated, refreshing session...');
+            const updatedSession = {
+              ...userSession,
+              permissions: freshUserData.permissions || {}
+            };
+            await storage.setItem('userSession', JSON.stringify(updatedSession));
+            setUser(updatedSession);
+          }
+        }
+      } catch (validationError: any) {
+        console.warn('⚠️ Session validation failed (network issue?):', validationError.message);
+        // Don't clear session on network errors - user can still use the app offline
+        if (!validationError.message?.includes('timeout') && !validationError.message?.includes('network')) {
+          console.log('❌ Non-network validation error, clearing session');
           await storage.removeItem('userSession');
           setUser(null);
-        } else {
-          console.log('✅ Session validation successful');
-          // Update user context for RLS
-          await setUserContext(userSession.id);
-          setUser(userSession);
         }
       }
+
     } catch (error) {
-      console.error('Failed to load user session:', error);
-      // Clear potentially corrupted session
-      try {
-        await storage.removeItem('userSession');
-      } catch (clearError) {
-        console.error('Failed to clear corrupted session:', clearError);
+      console.error('❌ Critical error loading user session:', error);
+
+      // Only clear session if it's a parsing/storage error, not network
+      if (error instanceof SyntaxError || (error as any)?.message?.includes('storage')) {
+        console.log('🧹 Clearing potentially corrupted session');
+        try {
+          await storage.removeItem('userSession');
+        } catch (clearError) {
+          console.error('❌ Failed to clear corrupted session:', clearError);
+        }
       }
+
       setUser(null);
     } finally {
+      console.log('✅ Session restoration process completed');
       setIsLoading(false);
     }
   };
@@ -439,6 +519,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activityLogs: {
         view: true,
       },
+      settings: {
+        view: true,
+        userManagement: true,
+        systemSettings: true,
+      },
+      help: {
+        view: true,
+      },
     };
   }, []);
 
@@ -500,6 +588,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       activityLogs: {
         view: false,
+      },
+      settings: {
+        view: false,
+        userManagement: false,
+        systemSettings: false,
+      },
+      help: {
+        view: true,
       },
     };
   }, []);
@@ -680,8 +776,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log('🔍 Created user session:', userSession);
 
-      // Save session
-      await storage.setItem('userSession', JSON.stringify(userSession));
+      // Save session with verification
+      try {
+        console.log('💾 Saving user session to storage...');
+        await storage.setItem('userSession', JSON.stringify(userSession));
+
+        // Verify the session was saved correctly
+        const savedSession = await storage.getItem('userSession');
+        if (savedSession) {
+          const parsedSession = JSON.parse(savedSession);
+          if (parsedSession.email === userSession.email) {
+            console.log('✅ Session saved and verified successfully');
+          } else {
+            console.error('❌ Session verification failed - data mismatch');
+            throw new Error('Session save verification failed');
+          }
+        } else {
+          console.error('❌ Session verification failed - no data found');
+          throw new Error('Session was not saved');
+        }
+      } catch (saveError) {
+        console.error('❌ Failed to save user session:', saveError);
+        // Continue with login but warn user about persistence issue
+        console.warn('⚠️ Authentication will not persist across app restarts');
+      }
+
       setUser(userSession);
 
       // Set current user for activity logging and log login
@@ -1017,7 +1136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // For admin users, check permissions.locations
     if (user.role === 'admin' && user.permissions?.locations && user.permissions.locations.length > 0) {
-      const locations = user.permissions.locations.map(id => id.toString());
+      const locations = user.permissions.locations.map((id: any) => id.toString());
       console.log('📍 Admin accessible locations from permissions:', locations);
       return locations;
     }
@@ -1047,6 +1166,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return [];
   }, [user]);
 
+  // Debug functions (only in development)
+  const debugStorage = useCallback(async () => {
+    if (__DEV__) {
+      const { logStorageDebugInfo } = await import('../utils/storageDebug');
+      await logStorageDebugInfo();
+    }
+  }, []);
+
+  const testPersistence = useCallback(async (): Promise<boolean> => {
+    if (!__DEV__) return false;
+
+    try {
+      console.log('🧪 Testing authentication persistence...');
+
+      // Save a test session
+      const testSession = {
+        id: 'test-persistence',
+        email: 'test@persistence.com',
+        name: 'Test User',
+        role: 'admin',
+        permissions: {},
+        assignedLocations: [],
+        assigned_location_id: null,
+        loginTime: new Date().toISOString()
+      };
+
+      await storage.setItem('testSession', JSON.stringify(testSession));
+      console.log('✅ Test session saved');
+
+      // Try to retrieve it
+      const retrieved = await storage.getItem('testSession');
+      if (retrieved) {
+        const parsed = JSON.parse(retrieved);
+        const success = parsed.email === testSession.email;
+        console.log(success ? '✅ Persistence test passed' : '❌ Persistence test failed');
+
+        // Clean up
+        await storage.removeItem('testSession');
+        return success;
+      } else {
+        console.log('❌ Persistence test failed - no data retrieved');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Persistence test error:', error);
+      return false;
+    }
+  }, []);
+
   // Memoize the context value to prevent unnecessary re-renders
   const value = useMemo(() => ({
     user,
@@ -1058,7 +1226,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isRole,
     canAccessLocation,
     getAccessibleLocations,
-  }), [user, isLoading, login, logout, refreshUserData, hasPermission, isRole, canAccessLocation, getAccessibleLocations]);
+    ...__DEV__ && { debugStorage, testPersistence },
+  }), [user, isLoading, login, logout, refreshUserData, hasPermission, isRole, canAccessLocation, getAccessibleLocations, debugStorage, testPersistence]);
 
   return (
     <AuthContext.Provider value={value}>
