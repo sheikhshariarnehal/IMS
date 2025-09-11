@@ -10,7 +10,11 @@
     "newArchEnabled": false,
     "sdkVersion": "53.0.0",
     "description": "Inventory Management System for Serrano Tex - Complete business management solution",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
@@ -37,11 +41,12 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -64,8 +69,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "46435344-54a8-4150-8901-2413b76f1e40"
+        "projectId": "c33db628-b31d-4242-9e56-b9fdd08f07a7"
       }
-    }
+    },
+    "owner": "shariarnehal"
   }
 }

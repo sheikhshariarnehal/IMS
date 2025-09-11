@@ -1140,7 +1140,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       color: theme.colors.text.muted,
     },
     dropdownIcon: {
-      transition: 'transform 0.2s ease',
+      // Transition animations are handled by React Native Animated API
     },
     dropdownIconRotated: {
       transform: [{ rotate: '180deg' }],
@@ -1520,7 +1520,7 @@ export default function TransferForm({ visible, onClose, onSubmit, product }: Tr
       color: theme.colors.text.primary,
       marginBottom: 8,
     },
-    errorText: {
+    formErrorText: {
       fontSize: 14,
       color: theme.colors.status.error,
       marginTop: 4,
